@@ -10,18 +10,14 @@ local _savedVars
 
 local function ApplySettings()
     if _savedVars.enabled then
-        d("enable Data")
         _Data.Enable()
     else
-        d("disable Data")
         _Data.Disable()
     end
 
     if _savedVars.enabled and _savedVars.panelEnabled then
-        d("enable Panel")
         _Panel.Enable()
     else
-        d("disable Panel")
         _Panel.Disable()
     end
 end

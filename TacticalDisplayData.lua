@@ -6,7 +6,7 @@ local _opponentTable
 local _onOpponentUpdated = {}
 _Data.OnOpponentUpdated = _onOpponentUpdated
 
-local DEBUG_COMBAT = true
+local DEBUG_COMBAT = false
 
 local INCLUDED_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE,
