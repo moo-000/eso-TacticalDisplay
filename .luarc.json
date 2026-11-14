@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "diagnostics.disable": [
+    "param-type-mismatch"
+  ],
+  "diagnostics.libraryFiles": "Disable",
+  "diagnostics.neededFileStatus": {
+    "codestyle-check": "Any"
+  },
+  "format.maxLineLength": 200,
+  "hint.enable": true,
+  "runtime.version": "Lua 5.1",
+  "type.castNumberToInteger": true,
+  "workspace.library": [
+    "../../Dev/eso-api-update-51/library",
+    "../LibAddonMenu-2.0"
+  ],
+  "workspace.preloadFileSize": 600
+}

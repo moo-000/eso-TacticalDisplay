@@ -1,0 +1,11 @@
+## Title: Tactical Display
+## Author: moo
+## Version: 0.1
+## APIVersion: 101051
+## DependsOn: LibAddonMenu-2.0>=43
+## SavedVariables: TacticalDisplaySavedVariables
+
+TacticalDisplayData.lua
+TacticalDisplayPanel.lua
+TacticalDisplayMenu.lua
+TacticalDisplay.lua
