@@ -1,15 +1,18 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Panel = TacticalDisplay.Panel or {}
-local Panel = TacticalDisplay.Panel
+local _Panel = TacticalDisplay.Panel
+local _Data = TacticalDisplay.Data
 
-local OPPONENT_RENDER_DELAY_MS = 100
 local OPPONENT_RENDER_NAME = "TacticalDisplay_OpponentListRender"
+local OPPONENT_RENDER_DELAY_MS = 100
 
 local OPPONENT_CLEANUP_NAME = "TacticalDisplay_OpponentListCleanup"
 local OPPONENT_CLEANUP_INTERVAL_MS = 2000
 local OPPONENT_PURGE_SECONDS = 30
 local OPPONENT_RECENT_SECONDS = 2
 
+local DEFAULT_OFFSET_X = 40
+local DEFAULT_OFFSET_Y = 240
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
 local CONTENT_PADDING = 8
@@ -24,37 +27,13 @@ local OPPONENT_ICON_SIZE = 20
 local OPPONENT_DETAILS_OFFSET = OPPONENT_NAME_WIDTH
     + OPPONENT_ICON_MARGIN_L + OPPONENT_ICON_SIZE + OPPONENT_ICON_MARGIN_R
 
-local _config
-local _defaults = {
-    offsetX = 40,
-    offsetY = 240,
-}
 local _visibleOpponentEntries = {} -- [index] = { opponent, isRecent }
+
+local _config
+local _isPanelEnabled
+local _fragment
 local _window
-local _contentArea
 local _opponentRows = {}
-
-local function UpdateContentSize(width, height)
-    if not _window then
-        return
-    end
-
-    local panelWidth = math.max(MIN_WIDTH, (width or 0) + CONTENT_PADDING * 2)
-    local panelHeight = math.max(MIN_HEIGHT, (height or 0) + CONTENT_PADDING * 2)
-    _window:SetDimensions(panelWidth, panelHeight)
-end
-
-local function ApplyLayout()
-    if not _window or not _config then
-        return
-    end
-
-    _window:ClearAnchors()
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
-        _config.offsetX or _defaults.offsetX,
-        _config.offsetY or _defaults.offsetY)
-    UpdateContentSize()
-end
 
 local function EnforceVisibleOpponentLimit()
     while #_visibleOpponentEntries > MAX_VISIBLE_OPPONENTS do
@@ -90,11 +69,13 @@ local function AddVisibleOpponent(opponent)
     EnforceVisibleOpponentLimit()
 end
 
-local function RenderOpponentList()
-    if not _contentArea then
-        return
-    end
+local function UpdateContentSize(width, height)
+    local panelWidth = math.max(MIN_WIDTH, (width or 0) + CONTENT_PADDING * 2)
+    local panelHeight = math.max(MIN_HEIGHT, (height or 0) + CONTENT_PADDING * 2)
+    _window:SetDimensions(panelWidth, panelHeight)
+end
 
+local function RenderOpponentList()
     local maxTextWidth = 0
     local numOpponents = 0
     for index, row in ipairs(_opponentRows) do
@@ -232,8 +213,8 @@ end
 local function CreateUI()
     _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayWindow")
     _window:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _defaults.offsetX, _defaults.offsetY)
-    _window:SetDrawTier(DT_HIGH)
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y)
+    _window:SetDrawTier(DT_LOW)
     _window:SetDrawLayer(DL_OVERLAY)
     _window:SetClampedToScreen(true)
     _window:SetMouseEnabled(true)
@@ -249,7 +230,7 @@ local function CreateUI()
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
     _backdrop:SetMouseEnabled(false)
 
-    _contentArea = WINDOW_MANAGER:CreateControl("TacticalDisplayContent", _window, CT_CONTROL)
+    local _contentArea = WINDOW_MANAGER:CreateControl("TacticalDisplayContent", _window, CT_CONTROL)
     _contentArea:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
     _contentArea:SetAnchor(BOTTOMRIGHT, _window, BOTTOMRIGHT, -CONTENT_PADDING, -CONTENT_PADDING)
     _contentArea:SetMouseEnabled(false)
@@ -294,33 +275,59 @@ local function CreateUI()
         }
     end
 
+    _fragment = ZO_FadeSceneFragment:New(_window, true, 150)
+    _fragment:SetConditional(function()
+        return _isPanelEnabled
+    end)
+    SCENE_MANAGER:GetScene("hud"):AddFragment(_fragment)
+    SCENE_MANAGER:GetScene("hudui"):AddFragment(_fragment)
+
     UpdateContentSize()
 end
 
-function Panel.ResetLayout()
-    _config.offsetX = _defaults.offsetX
-    _config.offsetY = _defaults.offsetY
-    ApplyLayout()
-end
+local OPPONENT_UPDATE_NAME = "TacticalDisplayPanel_Update"
 
-function Panel.OnOpponentUpdated(opponent)
+local function OnOpponentUpdated(opponent)
     AddVisibleOpponent(opponent)
     ScheduleOpponentRender()
 end
 
-function Panel.Initialize(savedVars)
+local function ApplyLayout()
+    _window:ClearAnchors()
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
+        _config.offsetX or DEFAULT_OFFSET_X,
+        _config.offsetY or DEFAULT_OFFSET_Y)
+    UpdateContentSize()
+end
+
+function _Panel.ResetLayout()
+    _config.offsetX = DEFAULT_OFFSET_X
+    _config.offsetY = DEFAULT_OFFSET_Y
+    ApplyLayout()
+end
+
+function _Panel.Initialize(savedVars)
     savedVars.panel = savedVars.panel or {}
     _config = savedVars.panel
 
     CreateUI()
     ApplyLayout()
+end
+
+function _Panel.Enable()
+    _Data.OnOpponentUpdated[OPPONENT_UPDATE_NAME] = OnOpponentUpdated
+    EVENT_MANAGER:RegisterForUpdate(OPPONENT_CLEANUP_NAME, OPPONENT_CLEANUP_INTERVAL_MS, CleanupOpponentEntries)
+
+    _isPanelEnabled = true
+    _fragment:Refresh()
+
     ScheduleOpponentRender()
 end
 
-function Panel.ApplySettings(enabled)
-    if enabled then
-        EVENT_MANAGER:RegisterForUpdate(OPPONENT_CLEANUP_NAME, OPPONENT_CLEANUP_INTERVAL_MS, CleanupOpponentEntries)
-    else
-        EVENT_MANAGER:UnregisterForUpdate(OPPONENT_CLEANUP_NAME)
-    end
+function _Panel.Disable()
+    EVENT_MANAGER:UnregisterForUpdate(OPPONENT_CLEANUP_NAME)
+    _Data.OnOpponentUpdated[OPPONENT_UPDATE_NAME] = nil
+
+    _isPanelEnabled = false
+    _fragment:Refresh()
 end

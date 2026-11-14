@@ -1,9 +1,10 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
-local Data = TacticalDisplay.Data
+local _Data = TacticalDisplay.Data
 
 local _opponentTable
-local _onOpponentUpdated
+local _onOpponentUpdated = {}
+_Data.OnOpponentUpdated = _onOpponentUpdated
 
 local DEBUG_COMBAT = true
 
@@ -60,6 +61,14 @@ local function GetOrCreateOpponent(key)
     return opponent
 end
 
+local function InvokeOnOpponentUpdated(opponent)
+    for _, callback in pairs(_onOpponentUpdated) do
+        if callback then
+            callback(opponent)
+        end
+    end
+end
+
 local function OnIncomingCombatEvent(
     eventCode,
     result,
@@ -114,7 +123,7 @@ local function OnIncomingCombatEvent(
             opponent.lastBaseDamage))
     end
 
-    if _onOpponentUpdated then _onOpponentUpdated(opponent) end
+    InvokeOnOpponentUpdated(opponent)
 end
 
 local function OnOutgoingCombatEvent(
@@ -181,7 +190,7 @@ local function OnOutgoingCombatEvent(
             opponent.lastMitigation))
     end
 
-    if _onOpponentUpdated then _onOpponentUpdated(opponent) end
+    InvokeOnOpponentUpdated(opponent)
 end
 
 local INCOMING_COMBAT_EVENT_PREFIX = "TacticalDisplay_Combat_In_"
@@ -195,7 +204,9 @@ local function RegisterCombatEvent()
                 incomingCombatEvent,
                 EVENT_COMBAT_EVENT,
                 REGISTER_FILTER_IS_ERROR, false,
+                ---@diagnostic disable-next-line: redundant-parameter
                 REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
+                ---@diagnostic disable-next-line: redundant-parameter
                 REGISTER_FILTER_COMBAT_RESULT, actionResult
             ) then
             d(string.format("TacticalDisplay: failed to apply filter for %s", incomingCombatEvent))
@@ -207,7 +218,9 @@ local function RegisterCombatEvent()
                 outgoingCombatEvent,
                 EVENT_COMBAT_EVENT,
                 REGISTER_FILTER_IS_ERROR, false,
+                ---@diagnostic disable-next-line: redundant-parameter
                 REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
+                ---@diagnostic disable-next-line: redundant-parameter
                 REGISTER_FILTER_COMBAT_RESULT, actionResult
             ) then
             d(string.format("TacticalDisplay: failed to apply filter for %s", outgoingCombatEvent))
@@ -222,21 +235,20 @@ local function UnregisterCombatEvent()
     end
 end
 
-function Data.Initialize(savedVars)
+function _Data.Initialize(savedVars)
     local serverName = GetWorldName()
-    savedVars.combatData = savedVars.combatData or {}
-    savedVars.combatData[serverName] = savedVars.combatData[serverName] or {}
-    savedVars.combatData[serverName].opponentTable = savedVars.combatData[serverName].opponentTable or {}
+    savedVars.data = savedVars.data or {}
+    savedVars.data[serverName] = savedVars.data[serverName] or {}
+    savedVars.data[serverName].opponentTable = savedVars.data[serverName].opponentTable or {}
 
-    _opponentTable = savedVars.combatData[serverName].opponentTable
+    _opponentTable = savedVars.data[serverName].opponentTable
 end
 
-function Data.ApplySettings(enabled, opponentUpdatedCallback)
-    if enabled then
-        _onOpponentUpdated = opponentUpdatedCallback
-        RegisterCombatEvent()
-    else
-        _onOpponentUpdated = nil
-        UnregisterCombatEvent()
-    end
+function _Data.Enable()
+    UnregisterCombatEvent()
+    RegisterCombatEvent()
+end
+
+function _Data.Disable()
+    UnregisterCombatEvent()
 end
