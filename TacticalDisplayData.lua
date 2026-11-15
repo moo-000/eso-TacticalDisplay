@@ -1,48 +1,32 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
+local _Base = TacticalDisplay.Base
+local _CheckHiddenAbility = _Base.CheckHiddenAbility     -- func(actionResult, abilityId, abilityName) => true/false
+local _PlayerAbilityDamages = _Base.PlayerAbilityDamages -- [abilityId] => damage or 0
 
-local _opponentTable
-local _onOpponentUpdated = {}
+local _debugLog                                          -- boolean
+local _opponentTable                                     -- [source_or_target] = opponent data, see GetOrCreateOpponent()
+local _onOpponentUpdated = {}                            -- [caller_id] = func callback(opponent)
 _Data.OnOpponentUpdated = _onOpponentUpdated
-local _debugLog
 
 local INCLUDED_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE,
     ACTION_RESULT_CRITICAL_DAMAGE,
-    -- ACTION_RESULT_DOT_TICK,
-    -- ACTION_RESULT_DOT_TICK_CRITICAL,
-    -- ACTION_RESULT_REFLECTED_DAMAGE,
+    ACTION_RESULT_DOT_TICK,
+    ACTION_RESULT_DOT_TICK_CRITICAL,
+    -- ACTION_RESULT_REFLECTED_DAMAGE, -- can't include as it'd mess up profile.
     ACTION_RESULT_BLOCKED_DAMAGE,
     ACTION_RESULT_DAMAGE_SHIELDED,
-}
-
-local CRITICAL_ACTION_RESULTS = {
-    [ACTION_RESULT_CRITICAL_DAMAGE] = true,
-    [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
 
 local BLOCKED_ACTION_RESULTS = {
     [ACTION_RESULT_BLOCKED_DAMAGE] = true,
 }
 
-local EXCLUDED_ABILITY_NAMES = {
-    -- Status effects
-    ["Burning"] = true,
-    ["Chilled"] = true,
-    ["Concussed"] = true,
-    ["Diseased"] = true,
-    ["Hemorrhaging"] = true,
-    ["Overcharged"] = true,
-    ["Poisoned"] = true,
-    ["Sundered"] = true,
-    -- Weapon Enchants
-    ["Befouled Weapon"] = true,
-    ["Charged Weapon"] = true,
-    ["Decrease Health"] = true,
-    ["Fiery Weapon"] = true,
-    ["Frozen Weapon"] = true,
-    ["Poisoned Weapon"] = true,
+local CRITICAL_ACTION_RESULTS = {
+    [ACTION_RESULT_CRITICAL_DAMAGE] = true,
+    [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
 
 local function GetOrCreateOpponent(key)
@@ -51,7 +35,15 @@ local function GetOrCreateOpponent(key)
         opponent = {
             name = key,
             lastSeen = 0,
-            lastDealtAttack = nil, -- { abilityName: "Bash", abilityIcon, damage = 100, critical = true, blocked = false }
+            lastDealtAttack = nil,
+            -- {
+            --     abilityId = 123,
+            --     abilityIcon = nil,
+            --     abilityName = "Bash",
+            --     damage = 100,
+            --     critical = true,
+            --     blocked = false,
+            -- },
             lastBaseDamage = 0,
             lastMitigation = 0,
         }
@@ -91,7 +83,7 @@ local function OnIncomingCombatEvent(
     if not hitValue or hitValue <= 0
         or not sourceName or sourceName == ""
         or not abilityName or abilityName == ""
-        or EXCLUDED_ABILITY_NAMES[abilityName] == true then
+        or _CheckHiddenAbility(result, abilityId, abilityName) then
         return
     end
 
@@ -102,23 +94,29 @@ local function OnIncomingCombatEvent(
 
     local blocked = BLOCKED_ACTION_RESULTS[result]
     local critical = CRITICAL_ACTION_RESULTS[result]
+    local damage = hitValue + overflow
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, sourceName)
     local opponent = GetOrCreateOpponent(opponentKey)
     opponent.lastSeen = GetTimeStamp()
     opponent.lastDealtAttack = {
+        abilityId = abilityId,
         abilityName = abilityName,
         abilityIcon = abilityId and GetAbilityIcon(abilityId) or nil,
-        damage = hitValue,
+        damage = damage,
         critical = critical,
         blocked = blocked
     }
+
     if not blocked and not critical
         and abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
-        opponent.lastBaseDamage = hitValue
+        opponent.lastBaseDamage = damage
     end
+
     if _debugLog then
-        d(string.format("Incoming from [%s]: %s, %d (base %d)", opponentKey, abilityName, hitValue,
+        d(string.format("[TacticalDisplay] Incoming from [%s]: %d %s, %d+%d %s(base %d)",
+            opponentKey, abilityId, abilityName,
+            hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
             opponent.lastBaseDamage))
     end
 
@@ -148,7 +146,7 @@ local function OnOutgoingCombatEvent(
     if isError or not hitValue or hitValue <= 0
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or EXCLUDED_ABILITY_NAMES[abilityName] == true then
+        or _CheckHiddenAbility(result, abilityId, abilityName) then
         return
     end
 
@@ -165,27 +163,29 @@ local function OnOutgoingCombatEvent(
     opponent.lastSeen = GetTimeStamp()
 
     if not blocked and not critical
-        and abilityActionSlotType == ACTION_SLOT_TYPE_BLOCK
-        and abilityName == "Bash" then
+        and abilityActionSlotType == ACTION_SLOT_TYPE_BLOCK then
+        local damage = hitValue + overflow
+        -- TODO: use PlayerAbilityDamages
         local _, playerBashDamage = GetAdvancedStatValue(ADVANCED_STAT_DISPLAY_TYPE_BASH_DAMAGE)
         if playerBashDamage and playerBashDamage > 0 then
-            local mitigation = math.floor((1 - hitValue / playerBashDamage) * 100 + 0.5)
+            local mitigation = math.floor((1 - damage / playerBashDamage) * 100 + 0.5)
             if mitigation >= 0 then
                 opponent.lastMitigation = mitigation
                 if _debugLog then
                     d(string.format(
-                        "[TacticalDisplay] bash %d => %s %d, mitigated %d%%",
-                        playerBashDamage,
-                        opponentKey,
-                        hitValue,
-                        mitigation
+                        "[TacticalDisplay] %d %s %d => %s %d, mitigated %d%%",
+                        abilityId, abilityName, playerBashDamage,
+                        opponentKey, damage, mitigation
                     ))
                 end
             end
         end
     end
+
     if _debugLog then
-        d(string.format("Outgoing to [%s]: %s, %d (%d%%)", opponentKey, abilityName, hitValue,
+        d(string.format("[TacticalDisplay] Outgoing to [%s]: %d %s, %d+%d %s(%d%%)",
+            opponentKey, abilityId, abilityName,
+            hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
             opponent.lastMitigation))
     end
 

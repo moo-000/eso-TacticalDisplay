@@ -108,4 +108,5 @@ function _Settings.Initialize(savedVars)
 
     CreateSettingsUI()
     ApplySettings()
+    UpdateParameters()
 end
