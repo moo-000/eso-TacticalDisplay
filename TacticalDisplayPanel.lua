@@ -110,8 +110,10 @@ local function RenderOpponentList()
 
                 local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
                 local damageMarkup = damageText
-                if damageText ~= "" and attack.blocked then
+                if attack.blocked then
                     damageMarkup = "|c7F00FF" .. damageText .. "|r"
+                elseif attack.shielded then
+                    damageMarkup = "|c00FF00" .. damageText .. "|r"
                 end
 
                 if damageText ~= "" then

@@ -6,20 +6,24 @@ local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamag
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
-local _debugLog               -- boolean
-local _minDamage              -- skip tracking if lower than this
-local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
-local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
+local _debugLog                -- boolean
+local _minDamage               -- skip tracking if lower than this
+local _opponentTable           -- [source_or_target] = opponent data, see GetOrCreateOpponent()
+local _onOpponentUpdated = {}  -- [caller_id] = func callback(opponent)
 _Data.OnOpponentUpdated = _onOpponentUpdated
+local _damageShieldBuffer = {} -- pending { timeMs, sourceUnitId, targetUnitId, hitValue }
 
-local INCLUDED_ACTION_RESULTS = {
+local DAMAGE_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE,
     ACTION_RESULT_CRITICAL_DAMAGE,
     ACTION_RESULT_DOT_TICK,
     ACTION_RESULT_DOT_TICK_CRITICAL,
-    -- ACTION_RESULT_REFLECTED_DAMAGE,
+    -- ACTION_RESULT_REFLECTED_DAMAGE, -- FIXME: how to handle this??
     ACTION_RESULT_BLOCKED_DAMAGE,
-    ACTION_RESULT_DAMAGE_SHIELDED, -- ability_id is the shield id
+}
+
+local SHIELD_ACTION_RESULTS = {
+    ACTION_RESULT_DAMAGE_SHIELDED,
 }
 
 local BLOCKED_ACTION_RESULTS = {
@@ -31,9 +35,85 @@ local CRITICAL_ACTION_RESULTS = {
     [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
 
-local SHIELDED_ACTION_RESULTS = {
-    [ACTION_RESULT_DAMAGE_SHIELDED] = true,
-}
+local UPDATE_CLEANUP_NAME = "TacticalDisplay_Data_ExpireShieldDamage"
+local UPDATE_CLEANUP_INTERVAL_MS = 1000
+
+local function PullShieldedDamage(timeMs, sourceUnitId, targetUnitId)
+    local totalDamage = 0
+    local numPulled = 0
+    for i = #_damageShieldBuffer, 1, -1 do
+        local shieldTimeMs, shieldSourceUnitId, shieldTargetUnitId, shieldDamage = unpack(_damageShieldBuffer[i])
+        if shieldSourceUnitId == sourceUnitId
+            and shieldTargetUnitId == targetUnitId
+            and timeMs - shieldTimeMs < 100
+        then
+            table.remove(_damageShieldBuffer, i)
+            totalDamage = totalDamage + shieldDamage
+            numPulled = numPulled + 1
+        end
+    end
+    if numPulled > 0 and _debugLog then
+        _LogDebug(string.format("Pulled shield damage at %d: num %d, total %d; remain: %d",
+            timeMs, numPulled, totalDamage, #_damageShieldBuffer))
+    end
+    return totalDamage
+end
+
+local function ExpireShieldedDamage()
+    local numExpired = 0
+    local clockTimeMs = GetGameTimeMilliseconds()
+    for i = #_damageShieldBuffer, 1, -1 do
+        local shieldTimeMs, _, _, _ = unpack(_damageShieldBuffer[i])
+        if clockTimeMs - shieldTimeMs > 200 then
+            table.remove(_damageShieldBuffer, i)
+            numExpired = numExpired + 1
+        end
+    end
+    if numExpired > 0 and _debugLog then
+        _LogDebug(string.format("Expired shield damage: num %d; remain: %d",
+            numExpired, #_damageShieldBuffer))
+    end
+end
+
+local function OnShieldCombatEvent(
+    eventCode,
+    result,
+    isError,
+    abilityName,
+    abilityGraphic,
+    abilityActionSlotType,
+    sourceName,
+    sourceType,
+    targetName,
+    targetType,
+    hitValue,
+    powerType,
+    damageType,
+    log,
+    sourceUnitId,
+    targetUnitId,
+    abilityId,
+    overflow
+)
+    if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
+        or not targetName or targetName == ""
+        or not abilityName or abilityName == ""
+        or _CheckHiddenAbility(result, abilityId, abilityName) then
+        return
+    end
+
+    if hitValue == 0 then
+        return
+    end
+
+    local timeMs = GetGameTimeMilliseconds()
+    _damageShieldBuffer[#_damageShieldBuffer + 1] = { timeMs, sourceUnitId, targetUnitId, hitValue }
+
+    if _debugLog then
+        _LogDebug(string.format("Buffer shield damage at %d, from %d, to %d, damage %d; buffer %d",
+            timeMs, sourceUnitId, targetUnitId, hitValue, #_damageShieldBuffer))
+    end
+end
 
 local function GetOrCreateOpponent(key)
     local opponent = _opponentTable[key]
@@ -49,6 +129,7 @@ local function GetOrCreateOpponent(key)
             --     damage = 100,
             --     critical = true,
             --     blocked = false,
+            --     shielded = false,
             -- },
             lastBaseDamage = 0,
             lastMitigation = 0,
@@ -86,31 +167,21 @@ local function OnIncomingCombatEvent(
     abilityId,
     overflow
 )
-    if not hitValue or hitValue <= 0
-        or not sourceName or sourceName == ""
+    if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
+        or not targetName or targetName == ""
         or not abilityName or abilityName == ""
         or _CheckHiddenAbility(result, abilityId, abilityName) then
         return
     end
 
-    -- ignore environment damage
-    if targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER then
-        return
-    end
-
-    local damage = hitValue + overflow
+    local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
+    local damage = hitValue + overflow + shielded
     if damage < _minDamage then
         return
     end
 
     local blocked = BLOCKED_ACTION_RESULTS[result]
     local critical = CRITICAL_ACTION_RESULTS[result]
-    local shielded = SHIELDED_ACTION_RESULTS[result]
-
-    if shielded then
-        abilityId = -1
-        abilityName = "(shielded)"
-    end
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, sourceName)
     local opponent = GetOrCreateOpponent(opponentKey)
@@ -121,12 +192,13 @@ local function OnIncomingCombatEvent(
         abilityIcon = abilityId and GetAbilityIcon(abilityId) or nil,
         damage = damage,
         critical = critical,
-        blocked = blocked
+        blocked = blocked,
+        shielded = shielded > 0,
     }
 
     if not blocked
         and not critical
-        and not shielded
+        and shielded == 0
         and overflow == 0 then
         -- record opponent base damage; need normalization later
         if abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
@@ -135,9 +207,10 @@ local function OnIncomingCombatEvent(
     end
 
     if _debugLog then
-        _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d %s(base %d): %d %d %d",
+        _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d+%d %s(base %d): %d %d %d",
             opponentKey, abilityId, abilityName,
-            hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
+            hitValue, overflow, shielded,
+            (critical and "C" or "") .. (blocked and "B" or ""),
             opponent.lastBaseDamage,
             result, sourceUnitId, targetUnitId))
     end
@@ -165,31 +238,21 @@ local function OnOutgoingCombatEvent(
     abilityId,
     overflow
 )
-    if isError or not hitValue or hitValue <= 0
+    if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
         or _CheckHiddenAbility(result, abilityId, abilityName) then
         return
     end
 
-    -- ignore environment damage
-    if targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER then
-        return
-    end
-
-    local damage = hitValue + overflow
+    local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
+    local damage = hitValue + overflow + shielded
     if damage < _minDamage then
         return
     end
 
     local blocked = BLOCKED_ACTION_RESULTS[result]
     local critical = CRITICAL_ACTION_RESULTS[result]
-    local shielded = SHIELDED_ACTION_RESULTS[result]
-
-    if shielded then
-        abilityId = -1
-        abilityName = "(shielded)"
-    end
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, targetName)
     local opponent = GetOrCreateOpponent(opponentKey)
@@ -197,7 +260,7 @@ local function OnOutgoingCombatEvent(
 
     if not blocked
         and not critical
-        and not shielded
+        and shielded == 0
         and overflow == 0 then
         -- record opponent mitigation; inaccurate if damage lands right after bar-swapping or buf change
         local castedDamage = _GetMeasurablePlayerDamage(abilityId, abilityName)
@@ -215,9 +278,10 @@ local function OnOutgoingCombatEvent(
     end
 
     if _debugLog then
-        _LogDebug(string.format("Outgoing to [%s]: %d %s, %d+%d %s(%d%%): %d %d %d",
+        _LogDebug(string.format("Outgoing to [%s]: %d %s, %d+%d+%d %s(%d%%): %d %d %d",
             opponentKey, abilityId, abilityName,
-            hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
+            hitValue, overflow, shielded,
+            (critical and "C" or "") .. (blocked and "B" or ""),
             opponent.lastMitigation,
             result, sourceUnitId, targetUnitId))
     end
@@ -225,13 +289,23 @@ local function OnOutgoingCombatEvent(
     InvokeOnOpponentUpdated(opponent)
 end
 
+local COMBAT_ACTION_RESULT_HANDLERS = {}
+for _, actionResult in ipairs(DAMAGE_ACTION_RESULTS) do
+    COMBAT_ACTION_RESULT_HANDLERS[actionResult] = { OnIncomingCombatEvent, OnOutgoingCombatEvent }
+end
+for _, actionResult in ipairs(SHIELD_ACTION_RESULTS) do
+    COMBAT_ACTION_RESULT_HANDLERS[actionResult] = { OnShieldCombatEvent, OnShieldCombatEvent }
+end
+
 local INCOMING_COMBAT_EVENT_PREFIX = "TacticalDisplay_Data_Combat_In_"
 local OUTGOING_COMBAT_EVENT_PREFIX = "TacticalDisplay_Data_Combat_Out_"
 
-local function RegisterCombatEvent()
-    for _, actionResult in ipairs(INCLUDED_ACTION_RESULTS) do
+local function RegisterForCombatEvents()
+    for actionResult, callbackPair in pairs(COMBAT_ACTION_RESULT_HANDLERS) do
+        local onIncoming, onOutgoing = unpack(callbackPair)
+
         local incomingCombatEvent = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
-        EVENT_MANAGER:RegisterForEvent(incomingCombatEvent, EVENT_COMBAT_EVENT, OnIncomingCombatEvent)
+        EVENT_MANAGER:RegisterForEvent(incomingCombatEvent, EVENT_COMBAT_EVENT, onIncoming)
         if not EVENT_MANAGER:AddFilterForEvent(
                 incomingCombatEvent,
                 EVENT_COMBAT_EVENT,
@@ -245,7 +319,7 @@ local function RegisterCombatEvent()
         end
 
         local outgoingCombatEvent = OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
-        EVENT_MANAGER:RegisterForEvent(outgoingCombatEvent, EVENT_COMBAT_EVENT, OnOutgoingCombatEvent)
+        EVENT_MANAGER:RegisterForEvent(outgoingCombatEvent, EVENT_COMBAT_EVENT, onOutgoing)
         if not EVENT_MANAGER:AddFilterForEvent(
                 outgoingCombatEvent,
                 EVENT_COMBAT_EVENT,
@@ -260,8 +334,8 @@ local function RegisterCombatEvent()
     end
 end
 
-local function UnregisterCombatEvent()
-    for _, actionResult in ipairs(INCLUDED_ACTION_RESULTS) do
+local function UnregisterForCombatEvents()
+    for actionResult, _ in pairs(COMBAT_ACTION_RESULT_HANDLERS) do
         EVENT_MANAGER:UnregisterForEvent(INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult), EVENT_COMBAT_EVENT)
         EVENT_MANAGER:UnregisterForEvent(OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult), EVENT_COMBAT_EVENT)
     end
@@ -282,7 +356,8 @@ function _Data.Enable()
     if _enabled then
         return
     end
-    RegisterCombatEvent()
+    RegisterForCombatEvents()
+    EVENT_MANAGER:RegisterForUpdate(UPDATE_CLEANUP_NAME, UPDATE_CLEANUP_INTERVAL_MS, ExpireShieldedDamage)
     _enabled = true
 end
 
@@ -290,7 +365,8 @@ function _Data.Disable()
     if not _enabled then
         return
     end
-    UnregisterCombatEvent()
+    UnregisterForCombatEvents()
+    EVENT_MANAGER:UnregisterForUpdate(UPDATE_CLEANUP_NAME)
     _enabled = false
 end
 

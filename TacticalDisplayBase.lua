@@ -8,7 +8,7 @@ local _debugLog        -- boolean
 local _hiddenAbilities -- [ability id] = true
 local _hiddenDOTs      -- [ability id] = ability name
 
-local _HIDDEN_ABILITIES = {
+local HIDDEN_ABILITIES = {
     -- Status effects
     [17897] = true,  -- "Frozen Weapon"
     [17899] = true,  -- "Charged Weapon"
@@ -21,11 +21,14 @@ local _HIDDEN_ABILITIES = {
     [21734] = true,  -- "Reflective Light" (Tick)
     [21925] = true,  -- "Diseased"
     [21929] = true,  -- "Poisoned"
+    [23232] = true,  -- "Hurricane"
     [28919] = true,  -- "Life Drain"
     [31103] = true,  -- "Disintegrated Dragonfire .."
     [44373] = true,  -- "Burning Embers"
     [44549] = true,  -- "Poison Injection"
     [45445] = true,  -- "Forceful"
+    [45584] = true,  -- "Soul Shatter"
+    [46743] = true,  -- "Absorb Magicka"
     [46746] = true,  -- "Absorb Stamina"
     [46749] = true,  -- "Decrease Health"
     [62529] = true,  -- "Quick Cloak"
@@ -34,6 +37,12 @@ local _HIDDEN_ABILITIES = {
     [80184] = true,  -- "Direwolf Lunge"
     [80189] = true,  -- "Direwolf Gnash"
     [80190] = true,  -- "Direwolf Gnash"
+    [100218] = true, -- "Solar Barrage"
+    [117854] = true, -- "Avid Boneyard"
+    [118746] = true, -- "Deathbolt"
+    [118766] = true, -- "Detonating Siphon"
+    [147846] = true, -- "Wrath of Elements"
+    [147847] = true, -- "Wrath of Elements"
     [148800] = true, -- "Sundered"
     [148801] = true, -- "Hemorrhaging"
     [148797] = true, -- "Overcharged"
@@ -43,7 +52,7 @@ local _HIDDEN_ABILITIES = {
     [258665] = true, -- "Igneous Weapons"
 }
 
-local _VISIBLE_DOT_ABILITIES = {
+local VISIBLE_DOT_ABILITIES = {
     [17879] = true,  -- "Corrosive Armor"
     [126941] = true, -- "Maarselok"
     -- [226394] = true, -- "Pyrebrand"
@@ -97,24 +106,24 @@ local function ResetMeasurablePlayerDamage()
     end
 end
 
-local _REG_PLAYER_ACTIVATED = "TacticalDisplay_Base_PlayerActivated"
-local _REG_BAR_SWAPPED = "TacticalDisplay_Base_BarSwapped"
+local REG_PLAYER_ACTIVATED = "TacticalDisplay_Base_PlayerActivated"
+local REG_BAR_SWAPPED = "TacticalDisplay_Base_BarSwapped"
 
 local function RegisterPlayerUpdate()
-    EVENT_MANAGER:RegisterForEvent(_REG_PLAYER_ACTIVATED, EVENT_PLAYER_ACTIVATED, ResetMeasurablePlayerDamage)
-    EVENT_MANAGER:RegisterForEvent(_REG_BAR_SWAPPED, EVENT_ACTIVE_WEAPON_PAIR_CHANGED, ResetMeasurablePlayerDamage)
+    EVENT_MANAGER:RegisterForEvent(REG_PLAYER_ACTIVATED, EVENT_PLAYER_ACTIVATED, ResetMeasurablePlayerDamage)
+    EVENT_MANAGER:RegisterForEvent(REG_BAR_SWAPPED, EVENT_ACTIVE_WEAPON_PAIR_CHANGED, ResetMeasurablePlayerDamage)
 end
 
 local function UnregisterPlayerUpdate()
-    EVENT_MANAGER:UnregisterForEvent(_REG_PLAYER_ACTIVATED, EVENT_PLAYER_ACTIVATED)
-    EVENT_MANAGER:UnregisterForEvent(_REG_BAR_SWAPPED, EVENT_ACTIVE_WEAPON_PAIR_CHANGED)
+    EVENT_MANAGER:UnregisterForEvent(REG_PLAYER_ACTIVATED, EVENT_PLAYER_ACTIVATED)
+    EVENT_MANAGER:UnregisterForEvent(REG_BAR_SWAPPED, EVENT_ACTIVE_WEAPON_PAIR_CHANGED)
 end
 
 function _Base.Initialize(savedVars)
     savedVars.base = savedVars.base or {}
     savedVars.base.hiddenDOTs = savedVars.base.hiddenDOTs or {}
 
-    _hiddenAbilities = ShallowCopy(_HIDDEN_ABILITIES)
+    _hiddenAbilities = ShallowCopy(HIDDEN_ABILITIES)
     _hiddenDOTs = savedVars.base.hiddenDOTs
     for abl, _ in pairs(_hiddenDOTs) do
         _hiddenAbilities[abl] = true
@@ -148,7 +157,7 @@ function _Base.CheckHiddenAbility(actionResult, abilityId, abilityName)
         return true
     end
 
-    if DOT_ACTION_RESULTS[actionResult] and not _VISIBLE_DOT_ABILITIES[abilityId] then
+    if DOT_ACTION_RESULTS[actionResult] and not VISIBLE_DOT_ABILITIES[abilityId] then
         _hiddenAbilities[abilityId] = true
         _hiddenDOTs[abilityId] = abilityName
         _LogDebug(string.format("Hide new DoT ability %d %s", abilityId, abilityName))
