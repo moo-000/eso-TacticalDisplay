@@ -11,15 +11,26 @@ local _hiddenDOTs      -- [ability id] = ability name
 local _HIDDEN_ABILITIES = {
     -- Status effects
     [17897] = true,  -- "Frozen Weapon"
+    [17899] = true,  -- "Charged Weapon"
+    [17902] = true,  -- "Poisoned Weapon"
+    [17904] = true,  -- "Befouled Weapon"
     [18084] = true,  -- "Burning"
+    [20660] = true,  -- "Burning Embers"
     [21481] = true,  -- "Chilled"
     [21487] = true,  -- "Concussed"
+    [21734] = true,  -- "Reflective Light" (Tick)
     [21925] = true,  -- "Diseased"
     [21929] = true,  -- "Poisoned"
     [28919] = true,  -- "Life Drain"
+    [31103] = true,  -- "Disintegrated Dragonfire .."
+    [44373] = true,  -- "Burning Embers"
+    [44549] = true,  -- "Poison Injection"
     [45445] = true,  -- "Forceful"
     [46746] = true,  -- "Absorb Stamina"
     [46749] = true,  -- "Decrease Health"
+    [62529] = true,  -- "Quick Cloak"
+    [62951] = true,  -- "Blockage of Frost"
+    [80170] = true,  -- "Burning Light"
     [80184] = true,  -- "Direwolf Lunge"
     [80189] = true,  -- "Direwolf Gnash"
     [80190] = true,  -- "Direwolf Gnash"
@@ -27,6 +38,9 @@ local _HIDDEN_ABILITIES = {
     [148801] = true, -- "Hemorrhaging"
     [148797] = true, -- "Overcharged"
     [215779] = true, -- "Diseased"
+    [233041] = true, -- "Shared Pain"
+    [258660] = true, -- "Molten Armaments"
+    [258665] = true, -- "Igneous Weapons"
 }
 
 local _VISIBLE_DOT_ABILITIES = {
@@ -125,7 +139,7 @@ function _Base.Disable()
     _enabled = false
 end
 
-function _Base.SetLogLevel(debug)
+function _Base.UpdateParameters(debug)
     _debugLog = debug
 end
 
@@ -144,7 +158,7 @@ function _Base.CheckHiddenAbility(actionResult, abilityId, abilityName)
     return false
 end
 
-function _Base.GetMeasurablePlayerDamage(abilityId)
+function _Base.GetMeasurablePlayerDamage(abilityId, abilityName)
     local damage = _measurablePlayerDamageByAbility[abilityId]
     if damage == nil then
         return 0
@@ -154,13 +168,11 @@ function _Base.GetMeasurablePlayerDamage(abilityId)
         if newDamage ~= nil and newDamage > 0 then
             _measurablePlayerDamageByAbility[abilityId] = newDamage
             if _debugLog then
-                local abilityName = GetAbilityName(abilityId, "player")
                 _LogDebug(string.format("Refresh player ability %d %s = %d from: %s",
                     abilityId, abilityName, newDamage, descr))
             end
             return newDamage
         else
-            local abilityName = GetAbilityName(abilityId, "player")
             _LogError(string.format("Failed to refresh player ability %d %s from: %s",
                 abilityId, abilityName, descr))
         end

@@ -7,6 +7,7 @@ local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
 local _debugLog               -- boolean
+local _minDamage              -- skip tracking if lower than this
 local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
 local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
 _Data.OnOpponentUpdated = _onOpponentUpdated
@@ -16,9 +17,9 @@ local INCLUDED_ACTION_RESULTS = {
     ACTION_RESULT_CRITICAL_DAMAGE,
     ACTION_RESULT_DOT_TICK,
     ACTION_RESULT_DOT_TICK_CRITICAL,
-    -- ACTION_RESULT_REFLECTED_DAMAGE, -- can't include as it'd mess up profile.
+    -- ACTION_RESULT_REFLECTED_DAMAGE,
     ACTION_RESULT_BLOCKED_DAMAGE,
-    ACTION_RESULT_DAMAGE_SHIELDED,
+    ACTION_RESULT_DAMAGE_SHIELDED, -- ability_id is the shield id
 }
 
 local BLOCKED_ACTION_RESULTS = {
@@ -28,6 +29,10 @@ local BLOCKED_ACTION_RESULTS = {
 local CRITICAL_ACTION_RESULTS = {
     [ACTION_RESULT_CRITICAL_DAMAGE] = true,
     [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
+}
+
+local SHIELDED_ACTION_RESULTS = {
+    [ACTION_RESULT_DAMAGE_SHIELDED] = true,
 }
 
 local function GetOrCreateOpponent(key)
@@ -93,9 +98,19 @@ local function OnIncomingCombatEvent(
         return
     end
 
+    local damage = hitValue + overflow
+    if damage < _minDamage then
+        return
+    end
+
     local blocked = BLOCKED_ACTION_RESULTS[result]
     local critical = CRITICAL_ACTION_RESULTS[result]
-    local damage = hitValue + overflow
+    local shielded = SHIELDED_ACTION_RESULTS[result]
+
+    if shielded then
+        abilityId = -1
+        abilityName = "(shielded)"
+    end
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, sourceName)
     local opponent = GetOrCreateOpponent(opponentKey)
@@ -109,17 +124,22 @@ local function OnIncomingCombatEvent(
         blocked = blocked
     }
 
-    if not blocked and not critical
-        and abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK
+    if not blocked
+        and not critical
+        and not shielded
         and overflow == 0 then
-        opponent.lastBaseDamage = damage
+        -- record opponent base damage; need normalization later
+        if abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
+            opponent.lastBaseDamage = damage
+        end
     end
 
     if _debugLog then
-        _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d %s(base %d)",
+        _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d %s(base %d): %d %d %d",
             opponentKey, abilityId, abilityName,
             hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
-            opponent.lastBaseDamage))
+            opponent.lastBaseDamage,
+            result, sourceUnitId, targetUnitId))
     end
 
     InvokeOnOpponentUpdated(opponent)
@@ -157,34 +177,49 @@ local function OnOutgoingCombatEvent(
         return
     end
 
+    local damage = hitValue + overflow
+    if damage < _minDamage then
+        return
+    end
+
     local blocked = BLOCKED_ACTION_RESULTS[result]
     local critical = CRITICAL_ACTION_RESULTS[result]
+    local shielded = SHIELDED_ACTION_RESULTS[result]
+
+    if shielded then
+        abilityId = -1
+        abilityName = "(shielded)"
+    end
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, targetName)
     local opponent = GetOrCreateOpponent(opponentKey)
     opponent.lastSeen = GetTimeStamp()
 
-    if not blocked and not critical and overflow == 0 then
-        local castedDamage = _GetMeasurablePlayerDamage(abilityId)
+    if not blocked
+        and not critical
+        and not shielded
+        and overflow == 0 then
+        -- record opponent mitigation; inaccurate if damage lands right after bar-swapping or buf change
+        local castedDamage = _GetMeasurablePlayerDamage(abilityId, abilityName)
         if castedDamage > 0 then
-            local receivedDamage = hitValue
-            local mitigation = math.floor((1 - receivedDamage / castedDamage) * 100 + 0.5)
+            local mitigation = math.floor((1 - damage / castedDamage) * 100 + 0.5)
             if mitigation >= 0 then
                 opponent.lastMitigation = mitigation
                 if _debugLog then
                     _LogDebug(string.format("Update mitigation %d %s %d => %s %d, mitigated %d%%",
                         abilityId, abilityName, castedDamage,
-                        opponentKey, receivedDamage, mitigation))
+                        opponentKey, damage, mitigation))
                 end
             end
         end
     end
 
     if _debugLog then
-        _LogDebug(string.format("Outgoing to [%s]: %d %s, %d+%d %s(%d%%)",
+        _LogDebug(string.format("Outgoing to [%s]: %d %s, %d+%d %s(%d%%): %d %d %d",
             opponentKey, abilityId, abilityName,
             hitValue, overflow, (critical and "C" or "") .. (blocked and "B" or ""),
-            opponent.lastMitigation))
+            opponent.lastMitigation,
+            result, sourceUnitId, targetUnitId))
     end
 
     InvokeOnOpponentUpdated(opponent)
@@ -259,6 +294,7 @@ function _Data.Disable()
     _enabled = false
 end
 
-function _Data.SetLogLevel(debug)
+function _Data.UpdateParameters(debug, minDamage)
     _debugLog = debug
+    _minDamage = minDamage
 end

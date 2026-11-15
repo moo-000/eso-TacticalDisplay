@@ -338,7 +338,7 @@ function _Panel.Disable()
     _fragment:Refresh()
 end
 
-function _Panel.SetDurations(activeDuration, visibleDuration)
+function _Panel.UpdateParameters(activeDuration, visibleDuration)
     _opponentActiveDuration = activeDuration or 1
     _opponentVisibleDuration = visibleDuration or 1
 end

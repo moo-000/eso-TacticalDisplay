@@ -9,10 +9,11 @@ local _LibAddonMenu2 = LibAddonMenu2
 local _config
 local _defaults = {
     enabled = true,
+    debugLog = false,
+    minDamage = 300,
     panelEnabled = true,
     panelActiveDuration = 2,
     panelVisibleDuration = 30,
-    debugLog = false
 }
 
 local SAVED_VARS_VERSION = 2
@@ -38,9 +39,9 @@ local function ApplySettings()
 end
 
 local function UpdateParameters()
-    _Base.SetLogLevel(_config.debugLog)
-    _Data.SetLogLevel(_config.debugLog)
-    _Panel.SetDurations(_config.panelActiveDuration, _config.panelVisibleDuration)
+    _Base.UpdateParameters(_config.debugLog)
+    _Data.UpdateParameters(_config.debugLog, _config.minDamage)
+    _Panel.UpdateParameters(_config.panelActiveDuration, _config.panelVisibleDuration)
 end
 
 local function CreateSettingsUI()
@@ -73,6 +74,22 @@ local function CreateSettingsUI()
             end,
             setFunc = function(enabled)
                 _config.debugLog = enabled
+                UpdateParameters()
+            end,
+        },
+        {
+            type = "slider",
+            name = "Minimum damage to track",
+            min = 0,
+            max = 1000,
+            disabled = function()
+                return not _config.enabled
+            end,
+            getFunc = function()
+                return _config.minDamage
+            end,
+            setFunc = function(value)
+                _config.minDamage = value
                 UpdateParameters()
             end,
         },
