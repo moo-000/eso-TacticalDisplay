@@ -3,6 +3,12 @@ TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
 local _Data = TacticalDisplay.Data
 
+local _config
+local _defaults = {
+    offsetX = 40,
+    offsetY = 240,
+}
+
 local OPPONENT_RENDER_NAME = "TacticalDisplay_OpponentListRender"
 local OPPONENT_RENDER_DELAY_MS = 100
 
@@ -11,8 +17,6 @@ local OPPONENT_CLEANUP_INTERVAL_MS = 2000
 local OPPONENT_PURGE_SECONDS = 30
 local OPPONENT_RECENT_SECONDS = 2
 
-local DEFAULT_OFFSET_X = 40
-local DEFAULT_OFFSET_Y = 240
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
 local CONTENT_PADDING = 8
@@ -29,7 +33,6 @@ local OPPONENT_DETAILS_OFFSET = OPPONENT_NAME_WIDTH
 
 local _visibleOpponentEntries = {} -- [index] = { opponent, isRecent }
 
-local _config
 local _isPanelEnabled
 local _fragment
 local _window
@@ -213,7 +216,7 @@ end
 local function CreateUI()
     _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayWindow")
     _window:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y)
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _defaults.offsetX, _defaults.offsetY)
     _window:SetDrawTier(DT_LOW)
     _window:SetDrawLayer(DL_OVERLAY)
     _window:SetClampedToScreen(true)
@@ -295,19 +298,13 @@ end
 local function ApplyLayout()
     _window:ClearAnchors()
     _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
-        _config.offsetX or DEFAULT_OFFSET_X,
-        _config.offsetY or DEFAULT_OFFSET_Y)
+        _config.offsetX or _defaults.offsetX,
+        _config.offsetY or _defaults.offsetY)
     UpdateContentSize()
 end
 
-function _Panel.ResetLayout()
-    _config.offsetX = DEFAULT_OFFSET_X
-    _config.offsetY = DEFAULT_OFFSET_Y
-    ApplyLayout()
-end
-
 function _Panel.Initialize(savedVars)
-    savedVars.panel = savedVars.panel or {}
+    savedVars.panel = savedVars.panel or _defaults
     _config = savedVars.panel
 
     CreateUI()
@@ -330,4 +327,10 @@ function _Panel.Disable()
 
     _isPanelEnabled = false
     _fragment:Refresh()
+end
+
+function _Panel.ResetLayout()
+    _config.offsetX = _defaults.offsetX
+    _config.offsetY = _defaults.offsetY
+    ApplyLayout()
 end

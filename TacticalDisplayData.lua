@@ -5,8 +5,7 @@ local _Data = TacticalDisplay.Data
 local _opponentTable
 local _onOpponentUpdated = {}
 _Data.OnOpponentUpdated = _onOpponentUpdated
-
-local DEBUG_COMBAT = false
+local _debugLog
 
 local INCLUDED_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE,
@@ -118,7 +117,7 @@ local function OnIncomingCombatEvent(
         and abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
         opponent.lastBaseDamage = hitValue
     end
-    if DEBUG_COMBAT then
+    if _debugLog then
         d(string.format("Incoming from [%s]: %s, %d (base %d)", opponentKey, abilityName, hitValue,
             opponent.lastBaseDamage))
     end
@@ -173,7 +172,7 @@ local function OnOutgoingCombatEvent(
             local mitigation = math.floor((1 - hitValue / playerBashDamage) * 100 + 0.5)
             if mitigation >= 0 then
                 opponent.lastMitigation = mitigation
-                if DEBUG_COMBAT then
+                if _debugLog then
                     d(string.format(
                         "[TacticalDisplay] bash %d => %s %d, mitigated %d%%",
                         playerBashDamage,
@@ -185,7 +184,7 @@ local function OnOutgoingCombatEvent(
             end
         end
     end
-    if DEBUG_COMBAT then
+    if _debugLog then
         d(string.format("Outgoing to [%s]: %s, %d (%d%%)", opponentKey, abilityName, hitValue,
             opponent.lastMitigation))
     end
@@ -251,4 +250,8 @@ end
 
 function _Data.Disable()
     UnregisterCombatEvent()
+end
+
+function _Data.SetLogLevel(debug)
+    _debugLog = debug
 end

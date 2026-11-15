@@ -22,7 +22,7 @@ local _Panel = TacticalDisplay.Panel        -- dependency
 
 ### Internal Variables
 
-Internal variables not exposed on the Addon menu are managed by each module itself, by exposing an `Initialize(savedVars)` function to manage its internal settings, e.g.
+Internal variables not exposed to LibAddonMenu2 are managed by each module itself, by exposing an `Initialize(savedVars)` function to manage its internal settings, e.g.
 
 ```lua
 local _config
@@ -37,4 +37,12 @@ end
 
 ### Configurations
 
-Configurations for the Addon menu are centralized in [TacticalDisplaySettings](TacticalDisplaySettings.lua).
+Configurations for LibAddonMenu2 are centralized in [TacticalDisplaySettings](TacticalDisplaySettings.lua).
+
+## Order of code blocks
+
+1. Module table and dependencies.
+2. `_config` and `_defaults` or anything else for saved vars, and public parameters.
+3. Upper cased constants and data.
+4. Private functions.
+5. Public functions, ordered by stages.
