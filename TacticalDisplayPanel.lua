@@ -9,13 +9,14 @@ local _defaults = {
     offsetY = 240,
 }
 
+local _opponentActiveDuration = 2
+local _opponentVisibleDuration = 30
+
 local OPPONENT_RENDER_NAME = "TacticalDisplay_OpponentListRender"
 local OPPONENT_RENDER_DELAY_MS = 100
 
 local OPPONENT_CLEANUP_NAME = "TacticalDisplay_OpponentListCleanup"
-local OPPONENT_CLEANUP_INTERVAL_MS = 2000
-local OPPONENT_PURGE_SECONDS = 30
-local OPPONENT_RECENT_SECONDS = 2
+local OPPONENT_CLEANUP_INTERVAL_MS = 1000
 
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
@@ -31,7 +32,7 @@ local OPPONENT_ICON_SIZE = 20
 local OPPONENT_DETAILS_OFFSET = OPPONENT_NAME_WIDTH
     + OPPONENT_ICON_MARGIN_L + OPPONENT_ICON_SIZE + OPPONENT_ICON_MARGIN_R
 
-local _visibleOpponentEntries = {} -- [index] = { opponent, isRecent }
+local _visibleOpponentEntries = {} -- [index] = { opponent, isActive }
 
 local _isPanelEnabled
 local _fragment
@@ -60,14 +61,14 @@ end
 local function AddVisibleOpponent(opponent)
     for _, entry in ipairs(_visibleOpponentEntries) do
         if entry.opponent == opponent then
-            entry.isRecent = true
+            entry.isActive = true
             return
         end
     end
 
     table.insert(_visibleOpponentEntries, 1, {
         opponent = opponent,
-        isRecent = true,
+        isActive = true,
     })
     EnforceVisibleOpponentLimit()
 end
@@ -85,7 +86,7 @@ local function RenderOpponentList()
         local opponentEntry = _visibleOpponentEntries[index]
         local opponent = opponentEntry and opponentEntry.opponent
         if opponent then
-            local rowFont = opponentEntry.isRecent and "ZoFontGameBold" or "ZoFontGame"
+            local rowFont = opponentEntry.isActive and "ZoFontGameBold" or "ZoFontGame"
             row.nameLabel:SetFont(rowFont)
             row.detailLabel:SetFont(rowFont)
 
@@ -178,13 +179,13 @@ local function CleanupOpponentEntries()
         local opponent = opponentEntry and opponentEntry.opponent
         if not opponent
             or not opponent.lastSeen
-            or now - opponent.lastSeen >= OPPONENT_PURGE_SECONDS then
+            or now - opponent.lastSeen >= _opponentVisibleDuration then
             table.remove(_visibleOpponentEntries, index)
             changed = true
         else
-            local isRecent = now - opponent.lastSeen <= OPPONENT_RECENT_SECONDS
-            if opponentEntry.isRecent ~= isRecent then
-                opponentEntry.isRecent = isRecent
+            local isActive = now - opponent.lastSeen <= _opponentActiveDuration
+            if opponentEntry.isActive ~= isActive then
+                opponentEntry.isActive = isActive
                 changed = true
             end
         end
@@ -327,6 +328,11 @@ function _Panel.Disable()
 
     _isPanelEnabled = false
     _fragment:Refresh()
+end
+
+function _Panel.SetDurations(activeDuration, visibleDuration)
+    _opponentActiveDuration = activeDuration or 1
+    _opponentVisibleDuration = visibleDuration or 1
 end
 
 function _Panel.ResetLayout()

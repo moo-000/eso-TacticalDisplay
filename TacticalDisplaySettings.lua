@@ -9,6 +9,8 @@ local _config
 local _defaults = {
     enabled = true,
     panelEnabled = true,
+    panelActiveDuration = 2,
+    panelVisibleDuration = 30,
     debugLog = false
 }
 
@@ -30,6 +32,7 @@ end
 
 local function UpdateParameters()
     _Data.SetLogLevel(_config.debugLog)
+    _Panel.SetDurations(_config.panelActiveDuration, _config.panelVisibleDuration)
 end
 
 local function CreateSettingsUI()
@@ -84,6 +87,38 @@ local function CreateSettingsUI()
                     end,
                 },
                 {
+                    type = "slider",
+                    name = "How long (seconds) to highlight recent opponents",
+                    min = 1,
+                    max = 30,
+                    disabled = function()
+                        return not _config.panelEnabled
+                    end,
+                    getFunc = function()
+                        return _config.panelActiveDuration
+                    end,
+                    setFunc = function(value)
+                        _config.panelActiveDuration = value
+                        UpdateParameters()
+                    end,
+                },
+                {
+                    type = "slider",
+                    name = "How long (seconds) to keep recent opponents",
+                    min = 30,
+                    max = 600,
+                    disabled = function()
+                        return not _config.panelEnabled
+                    end,
+                    getFunc = function()
+                        return _config.panelVisibleDuration
+                    end,
+                    setFunc = function(value)
+                        _config.panelVisibleDuration = value
+                        UpdateParameters()
+                    end,
+                },
+                {
                     type = "button",
                     name = "Reset panel layout",
                     disabled = function()
@@ -105,6 +140,11 @@ end
 function _Settings.Initialize(savedVars)
     savedVars.settings = savedVars.settings or _defaults
     _config = savedVars.settings
+    for key, defaultValue in pairs(_defaults) do
+        if _config[key] == nil then
+            _config[key] = defaultValue
+        end
+    end
 
     CreateSettingsUI()
     ApplySettings()
