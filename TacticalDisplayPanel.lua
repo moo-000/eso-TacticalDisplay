@@ -1,7 +1,7 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
-local _Data = TacticalDisplay.Data
+local _OnOpponentUpdated = TacticalDisplay.Data.OnOpponentUpdated
 
 local _config
 local _defaults = {
@@ -12,11 +12,11 @@ local _defaults = {
 local _opponentActiveDuration = 2
 local _opponentVisibleDuration = 30
 
-local OPPONENT_RENDER_NAME = "TacticalDisplay_OpponentListRender"
-local OPPONENT_RENDER_DELAY_MS = 100
+local UPDATE_RENDER_NAME = "TacticalDisplay_Panel_Render"
+local UPDATE_RENDER_DELAY_MS = 100
 
-local OPPONENT_CLEANUP_NAME = "TacticalDisplay_OpponentListCleanup"
-local OPPONENT_CLEANUP_INTERVAL_MS = 1000
+local UPDATE_CLEANUP_NAME = "TacticalDisplay_Panel_Cleanup"
+local UPDATE_CLEANUP_INTERVAL_MS = 1000
 
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
@@ -34,7 +34,7 @@ local OPPONENT_DETAILS_OFFSET = OPPONENT_NAME_WIDTH
 
 local _visibleOpponentEntries = {} -- [index] = { opponent, isActive }
 
-local _isPanelEnabled
+local _isPanelEnabled = false
 local _fragment
 local _window
 local _opponentRows = {}
@@ -164,8 +164,8 @@ local function ScheduleOpponentRender()
     end
     _opponentRenderScheduled = true
 
-    EVENT_MANAGER:RegisterForUpdate(OPPONENT_RENDER_NAME, OPPONENT_RENDER_DELAY_MS, function()
-        EVENT_MANAGER:UnregisterForUpdate(OPPONENT_RENDER_NAME)
+    EVENT_MANAGER:RegisterForUpdate(UPDATE_RENDER_NAME, UPDATE_RENDER_DELAY_MS, function()
+        EVENT_MANAGER:UnregisterForUpdate(UPDATE_RENDER_NAME)
         _opponentRenderScheduled = false
         RenderOpponentList()
     end)
@@ -313,8 +313,12 @@ function _Panel.Initialize(savedVars)
 end
 
 function _Panel.Enable()
-    _Data.OnOpponentUpdated[OPPONENT_UPDATE_NAME] = OnOpponentUpdated
-    EVENT_MANAGER:RegisterForUpdate(OPPONENT_CLEANUP_NAME, OPPONENT_CLEANUP_INTERVAL_MS, CleanupOpponentEntries)
+    if _isPanelEnabled then
+        return
+    end
+
+    _OnOpponentUpdated[OPPONENT_UPDATE_NAME] = OnOpponentUpdated
+    EVENT_MANAGER:RegisterForUpdate(UPDATE_CLEANUP_NAME, UPDATE_CLEANUP_INTERVAL_MS, CleanupOpponentEntries)
 
     _isPanelEnabled = true
     _fragment:Refresh()
@@ -323,8 +327,12 @@ function _Panel.Enable()
 end
 
 function _Panel.Disable()
-    EVENT_MANAGER:UnregisterForUpdate(OPPONENT_CLEANUP_NAME)
-    _Data.OnOpponentUpdated[OPPONENT_UPDATE_NAME] = nil
+    if not _isPanelEnabled then
+        return
+    end
+
+    EVENT_MANAGER:UnregisterForUpdate(UPDATE_CLEANUP_NAME)
+    _OnOpponentUpdated[OPPONENT_UPDATE_NAME] = nil
 
     _isPanelEnabled = false
     _fragment:Refresh()

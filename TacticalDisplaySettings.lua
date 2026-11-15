@@ -1,6 +1,7 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Settings = TacticalDisplay.Settings or {}
 local _Settings = TacticalDisplay.Settings
+local _Base = TacticalDisplay.Base
 local _Data = TacticalDisplay.Data
 local _Panel = TacticalDisplay.Panel
 local _LibAddonMenu2 = LibAddonMenu2
@@ -18,6 +19,12 @@ local SAVED_VARS_VERSION = 2
 
 local function ApplySettings()
     if _config.enabled then
+        _Base.Enable()
+    else
+        _Base.Disable()
+    end
+
+    if _config.enabled then
         _Data.Enable()
     else
         _Data.Disable()
@@ -31,6 +38,7 @@ local function ApplySettings()
 end
 
 local function UpdateParameters()
+    _Base.SetLogLevel(_config.debugLog)
     _Data.SetLogLevel(_config.debugLog)
     _Panel.SetDurations(_config.panelActiveDuration, _config.panelVisibleDuration)
 end

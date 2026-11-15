@@ -5,6 +5,7 @@
 ## DependsOn: LibAddonMenu-2.0>=43
 ## SavedVariables: TacticalDisplaySavedVariables
 
+TacticalDisplayUtilities.lua
 TacticalDisplayBase.lua
 TacticalDisplayData.lua
 TacticalDisplayPanel.lua
