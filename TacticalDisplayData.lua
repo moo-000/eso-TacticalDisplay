@@ -385,7 +385,9 @@ local function RegisterForCombatEvents()
                     ---@diagnostic disable-next-line: redundant-parameter
                     REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
                     ---@diagnostic disable-next-line: redundant-parameter
-                    REGISTER_FILTER_COMBAT_RESULT, actionResult
+                    REGISTER_FILTER_COMBAT_RESULT, actionResult,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_ABILITY_ID, abilityId
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", dotReg))
             end

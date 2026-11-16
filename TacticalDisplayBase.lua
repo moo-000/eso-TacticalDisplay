@@ -7,6 +7,7 @@ local _LogDebug = TacticalDisplay.Utilities.LogDebug
 local _debugLog -- boolean
 
 _Base.HIDDEN_ABILITIES = {
+    [17895] = true,  -- "Fiery Weapon"
     [17897] = true,  -- "Frozen Weapon"
     [17899] = true,  -- "Charged Weapon"
     [17902] = true,  -- "Poisoned Weapon"
@@ -21,6 +22,7 @@ _Base.HIDDEN_ABILITIES = {
     [23232] = true,  -- "Hurricane"
     [28919] = true,  -- "Life Drain"
     [31103] = true,  -- "Disintegrated Dragonfire .."
+    [40252] = true,  -- "Razor Caltrops"
     [44373] = true,  -- "Burning Embers"
     [44549] = true,  -- "Poison Injection"
     [45445] = true,  -- "Forceful"
@@ -30,11 +32,13 @@ _Base.HIDDEN_ABILITIES = {
     [46749] = true,  -- "Decrease Health"
     [62529] = true,  -- "Quick Cloak"
     [62951] = true,  -- "Blockage of Frost"
+    [67204] = true,  -- "Leeching Plate"
     [80170] = true,  -- "Burning Light"
     [80184] = true,  -- "Direwolf Lunge"
     [80189] = true,  -- "Direwolf Gnash"
     [80190] = true,  -- "Direwolf Gnash"
     [100218] = true, -- "Solar Barrage"
+    [117321] = true, -- "Summon Twilight Matriarch"
     [117854] = true, -- "Avid Boneyard"
     [118746] = true, -- "Deathbolt"
     [118766] = true, -- "Detonating Siphon"
@@ -51,6 +55,7 @@ _Base.HIDDEN_ABILITIES = {
 
 _Base.TRACKED_DOT_ABILITIES = {
     [17879] = true,  -- "Corrosive Armor"
+    [62606] = true,  -- "Crescent Sweep"
     [126941] = true, -- "Maarselok"
     -- [226394] = true, -- "Pyrebrand"
 }
