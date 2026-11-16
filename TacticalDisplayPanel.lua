@@ -94,6 +94,18 @@ local function CreateUI()
         rowControl:SetDimensions(MIN_WIDTH, OPPONENT_ROW_HEIGHT)
         rowControl:SetMouseEnabled(false)
 
+        local timeline = ANIMATION_MANAGER:CreateTimeline()
+
+        local scaleAnim = timeline:InsertAnimation(ANIMATION_SCALE, rowControl, 0)
+        scaleAnim:SetScaleValues(1.1, 1.0)
+        scaleAnim:SetDuration(100)
+        -- scaleAnim:SetScaleFromCenter(true)
+        scaleAnim:SetEasingFunction(ZO_EaseOutQuadratic)
+
+        local fadeOutAnim = timeline:InsertAnimation(ANIMATION_ALPHA, rowControl, 0)
+        fadeOutAnim:SetAlphaValues(1, 0.5)
+        fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 2)
+
         local nameLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
         nameLabel:SetFont("ZoFontGame")
         nameLabel:SetColor(0.95, 0.95, 1, 1)
@@ -125,6 +137,7 @@ local function CreateUI()
             nameLabel = nameLabel,
             icon = icon,
             detailLabel = detailLabel,
+            timeline = timeline,
         }
     end
 
@@ -214,9 +227,11 @@ local function RenderRowContents(row, opponentEntry)
     row.detailLabel:SetDimensions(detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
     row.contentWidth = OPPONENT_DETAILS_OFFSET + detailWidth
     row.control:SetDimensions(row.contentWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
+    row.timeline:PlayFromStart()
 end
 
 local function ClearRowUI(row)
+    row.timeline:Stop()
     row.nameLabel:SetText("")
     row.detailLabel:SetText("")
     row.icon:SetHidden(true)
@@ -260,19 +275,21 @@ end
 local UPDATE_RENDER_NAME = "TacticalDisplay_Panel_Render"
 local UPDATE_RENDER_DELAY_MS = 100
 
-local _opponentRenderScheduled = false
+local _renderTaskScheduled = false
 
-local function ScheduleOpponentRender()
-    if _opponentRenderScheduled then
+local function DoRenderTask()
+    EVENT_MANAGER:UnregisterForUpdate(UPDATE_RENDER_NAME)
+    _renderTaskScheduled = false
+    RenderPanelUI()
+end
+
+local function ScheduleRenderTask()
+    if _renderTaskScheduled then
         return
     end
-    _opponentRenderScheduled = true
+    _renderTaskScheduled = true
 
-    EVENT_MANAGER:RegisterForUpdate(UPDATE_RENDER_NAME, UPDATE_RENDER_DELAY_MS, function()
-        EVENT_MANAGER:UnregisterForUpdate(UPDATE_RENDER_NAME)
-        _opponentRenderScheduled = false
-        RenderPanelUI()
-    end)
+    EVENT_MANAGER:RegisterForUpdate(UPDATE_RENDER_NAME, UPDATE_RENDER_DELAY_MS, DoRenderTask)
 end
 
 -------------------------------------------------------------------------------
@@ -283,8 +300,8 @@ local function RemoveVisibleOpponentAt(index)
     table.remove(_visibleOpponentEntries, index)
     local removedRow = table.remove(_opponentRows, index)
     table.insert(_opponentRows, removedRow)
-    removedRow.needsRender = true
     removedRow.needsAnchor = false
+    removedRow.needsRender = true
     for rowIndex = index, #_visibleOpponentEntries do
         _opponentRows[rowIndex].needsAnchor = true
     end
@@ -301,8 +318,8 @@ local function InsertVisibleOpponentAtTop(opponent)
     })
     local row = table.remove(_opponentRows, #_visibleOpponentEntries)
     table.insert(_opponentRows, 1, row)
-    row.needsRender = true
     row.needsAnchor = true
+    row.needsRender = true
     for index = 2, #_visibleOpponentEntries do
         _opponentRows[index].needsAnchor = true
     end
@@ -348,7 +365,7 @@ local function CleanupOpponentEntries()
         end
     end
     if changed then
-        ScheduleOpponentRender()
+        ScheduleRenderTask()
     end
 end
 
@@ -356,7 +373,7 @@ local OPPONENT_UPDATE_NAME = "TacticalDisplayPanel_Update"
 
 local function OnOpponentUpdated(opponent)
     AddOrUpdateVisibleOpponent(opponent)
-    ScheduleOpponentRender()
+    ScheduleRenderTask()
 end
 
 -------------------------------------------------------------------------------
@@ -382,7 +399,7 @@ function _Panel.Enable()
     _isPanelEnabled = true
     _fragment:Refresh()
 
-    ScheduleOpponentRender()
+    ScheduleRenderTask()
 end
 
 function _Panel.Disable()
