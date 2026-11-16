@@ -4,12 +4,9 @@ local _Base = TacticalDisplay.Base
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
-local _debugLog        -- boolean
-local _hiddenAbilities -- [ability id] = true
-local _hiddenDOTs      -- [ability id] = ability name
+local _debugLog -- boolean
 
-local HIDDEN_ABILITIES = {
-    -- Status effects
+_Base.HIDDEN_ABILITIES = {
     [17897] = true,  -- "Frozen Weapon"
     [17899] = true,  -- "Charged Weapon"
     [17902] = true,  -- "Poisoned Weapon"
@@ -52,16 +49,15 @@ local HIDDEN_ABILITIES = {
     [258665] = true, -- "Igneous Weapons"
 }
 
-local VISIBLE_DOT_ABILITIES = {
+_Base.TRACKED_DOT_ABILITIES = {
     [17879] = true,  -- "Corrosive Armor"
     [126941] = true, -- "Maarselok"
     -- [226394] = true, -- "Pyrebrand"
 }
 
-local DOT_ACTION_RESULTS = {
-    [ACTION_RESULT_DOT_TICK] = true,
-    [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
-}
+-------------------------------------------------------------------------------
+-- Measure player damage abilities for calculating opponent mitigations
+-------------------------------------------------------------------------------
 
 -- Ability id to player damage value.
 -- Value 0 means it needs updating.
@@ -78,14 +74,6 @@ local _measurablePlayerDamageByAbility = {
     [21970] = 0, -- "Bash"
     [32464] = 0, -- "Light Attack (Werewolf)"
 }
-
-local function ShallowCopy(source)
-    local copy = {}
-    for key, value in pairs(source) do
-        copy[key] = value
-    end
-    return copy
-end
 
 local function ExtractDamageFromAbilityDescription(description)
     if description == nil then
@@ -119,15 +107,35 @@ local function UnregisterPlayerUpdate()
     EVENT_MANAGER:UnregisterForEvent(REG_BAR_SWAPPED, EVENT_ACTIVE_WEAPON_PAIR_CHANGED)
 end
 
+function _Base.GetMeasurablePlayerDamage(abilityId, abilityName)
+    local damage = _measurablePlayerDamageByAbility[abilityId]
+    if damage == nil then
+        return 0
+    elseif damage == 0 then
+        local descr = GetAbilityDescription(abilityId, nil, "player")
+        local newDamage = ExtractDamageFromAbilityDescription(descr)
+        if newDamage ~= nil and newDamage > 0 then
+            _measurablePlayerDamageByAbility[abilityId] = newDamage
+            if _debugLog then
+                _LogDebug(string.format("Refresh player ability %d %s = %d from: %s",
+                    abilityId, abilityName, newDamage, descr))
+            end
+            return newDamage
+        else
+            _LogError(string.format("Failed to refresh player ability %d %s from: %s",
+                abilityId, abilityName, descr))
+        end
+    else
+        return damage
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Public functions
+-------------------------------------------------------------------------------
+
 function _Base.Initialize(savedVars)
     savedVars.base = savedVars.base or {}
-    savedVars.base.hiddenDOTs = savedVars.base.hiddenDOTs or {}
-
-    _hiddenAbilities = ShallowCopy(HIDDEN_ABILITIES)
-    _hiddenDOTs = savedVars.base.hiddenDOTs
-    for abl, _ in pairs(_hiddenDOTs) do
-        _hiddenAbilities[abl] = true
-    end
 end
 
 local _enabled = false
@@ -150,42 +158,4 @@ end
 
 function _Base.UpdateParameters(debug)
     _debugLog = debug
-end
-
-function _Base.CheckHiddenAbility(actionResult, abilityId, abilityName)
-    if _hiddenAbilities[abilityId] then
-        return true
-    end
-
-    if DOT_ACTION_RESULTS[actionResult] and not VISIBLE_DOT_ABILITIES[abilityId] then
-        _hiddenAbilities[abilityId] = true
-        _hiddenDOTs[abilityId] = abilityName
-        _LogDebug(string.format("Hide new DoT ability %d %s", abilityId, abilityName))
-        return true
-    end
-
-    return false
-end
-
-function _Base.GetMeasurablePlayerDamage(abilityId, abilityName)
-    local damage = _measurablePlayerDamageByAbility[abilityId]
-    if damage == nil then
-        return 0
-    elseif damage == 0 then
-        local descr = GetAbilityDescription(abilityId, nil, "player")
-        local newDamage = ExtractDamageFromAbilityDescription(descr)
-        if newDamage ~= nil and newDamage > 0 then
-            _measurablePlayerDamageByAbility[abilityId] = newDamage
-            if _debugLog then
-                _LogDebug(string.format("Refresh player ability %d %s = %d from: %s",
-                    abilityId, abilityName, newDamage, descr))
-            end
-            return newDamage
-        else
-            _LogError(string.format("Failed to refresh player ability %d %s from: %s",
-                abilityId, abilityName, descr))
-        end
-    else
-        return damage
-    end
 end

@@ -1,29 +1,32 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
-local _CheckHiddenAbility = TacticalDisplay.Base.CheckHiddenAbility
+local _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
+local _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
-local _debugLog                -- boolean
-local _minDamage               -- skip tracking if lower than this
-local _opponentTable           -- [source_or_target] = opponent data, see GetOrCreateOpponent()
-local _onOpponentUpdated = {}  -- [caller_id] = func callback(opponent)
+local _debugLog               -- boolean
+local _minDamage              -- skip tracking if lower than this
+local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
+local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
 _Data.OnOpponentUpdated = _onOpponentUpdated
-local _damageShieldBuffer = {} -- pending { timeMs, sourceUnitId, targetUnitId, hitValue }
+
+local SHIELD_ACTION_RESULTS = {
+    ACTION_RESULT_DAMAGE_SHIELDED,
+}
 
 local DAMAGE_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE,
     ACTION_RESULT_CRITICAL_DAMAGE,
-    ACTION_RESULT_DOT_TICK,
-    ACTION_RESULT_DOT_TICK_CRITICAL,
     -- ACTION_RESULT_REFLECTED_DAMAGE, -- FIXME: how to handle this??
     ACTION_RESULT_BLOCKED_DAMAGE,
 }
 
-local SHIELD_ACTION_RESULTS = {
-    ACTION_RESULT_DAMAGE_SHIELDED,
+local DOT_ACTION_RESULTS = {
+    ACTION_RESULT_DOT_TICK,
+    ACTION_RESULT_DOT_TICK_CRITICAL,
 }
 
 local BLOCKED_ACTION_RESULTS = {
@@ -35,8 +38,16 @@ local CRITICAL_ACTION_RESULTS = {
     [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
 
+-------------------------------------------------------------------------------
+-- Shielded damage events: buffer absorbed damages for pairing later
+-------------------------------------------------------------------------------
+
 local UPDATE_CLEANUP_NAME = "TacticalDisplay_Data_ExpireShieldDamage"
 local UPDATE_CLEANUP_INTERVAL_MS = 1000
+-- use very short buffer to avoid matching excluded DoTs and excluded damage abilities that are absorbed by shields.
+local SHIELD_BUFFER_DURATION_MS = 20
+
+local _damageShieldBuffer = {} -- list of { timeMs, sourceUnitId, targetUnitId, hitValue }
 
 local function PullShieldedDamage(timeMs, sourceUnitId, targetUnitId)
     local totalDamage = 0
@@ -45,7 +56,7 @@ local function PullShieldedDamage(timeMs, sourceUnitId, targetUnitId)
         local shieldTimeMs, shieldSourceUnitId, shieldTargetUnitId, shieldDamage = unpack(_damageShieldBuffer[i])
         if shieldSourceUnitId == sourceUnitId
             and shieldTargetUnitId == targetUnitId
-            and timeMs - shieldTimeMs < 100
+            and timeMs - shieldTimeMs <= SHIELD_BUFFER_DURATION_MS
         then
             table.remove(_damageShieldBuffer, i)
             totalDamage = totalDamage + shieldDamage
@@ -64,7 +75,7 @@ local function ExpireShieldedDamage()
     local clockTimeMs = GetGameTimeMilliseconds()
     for i = #_damageShieldBuffer, 1, -1 do
         local shieldTimeMs, _, _, _ = unpack(_damageShieldBuffer[i])
-        if clockTimeMs - shieldTimeMs > 200 then
+        if clockTimeMs - shieldTimeMs > SHIELD_BUFFER_DURATION_MS then
             table.remove(_damageShieldBuffer, i)
             numExpired = numExpired + 1
         end
@@ -96,9 +107,7 @@ local function OnShieldCombatEvent(
     overflow
 )
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
-        or not targetName or targetName == ""
-        or not abilityName or abilityName == ""
-        or _CheckHiddenAbility(result, abilityId, abilityName) then
+        or not targetName or targetName == "" then
         return
     end
 
@@ -114,6 +123,10 @@ local function OnShieldCombatEvent(
             timeMs, sourceUnitId, targetUnitId, hitValue, #_damageShieldBuffer))
     end
 end
+
+-------------------------------------------------------------------------------
+-- Combat damage events
+-------------------------------------------------------------------------------
 
 local function GetOrCreateOpponent(key)
     local opponent = _opponentTable[key]
@@ -170,13 +183,20 @@ local function OnIncomingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _CheckHiddenAbility(result, abilityId, abilityName) then
+        or _HIDDEN_ABILITIES[abilityId] then
         return
     end
 
     local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
     local damage = hitValue + overflow + shielded
-    if damage < _minDamage then
+    if damage == 0 then
+        if _debugLog then
+            _LogDebug(string.format("Exclude zero incoming damage from [%s]: %d %s: %d %d %d",
+                sourceName, abilityId, abilityName,
+                result, sourceUnitId, targetUnitId))
+        end
+        return
+    elseif damage < _minDamage then
         return
     end
 
@@ -241,13 +261,20 @@ local function OnOutgoingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _CheckHiddenAbility(result, abilityId, abilityName) then
+        or _HIDDEN_ABILITIES[abilityId] then
         return
     end
 
     local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
     local damage = hitValue + overflow + shielded
-    if damage < _minDamage then
+    if damage == 0 then
+        if _debugLog then
+            _LogDebug(string.format("Exclude zero outgoing damage from [%s]: %d %s: %d %d %d",
+                sourceName, abilityId, abilityName,
+                result, sourceUnitId, targetUnitId))
+        end
+        return
+    elseif damage < _minDamage then
         return
     end
 
@@ -289,57 +316,102 @@ local function OnOutgoingCombatEvent(
     InvokeOnOpponentUpdated(opponent)
 end
 
-local COMBAT_ACTION_RESULT_HANDLERS = {}
-for _, actionResult in ipairs(DAMAGE_ACTION_RESULTS) do
-    COMBAT_ACTION_RESULT_HANDLERS[actionResult] = { OnIncomingCombatEvent, OnOutgoingCombatEvent }
-end
-for _, actionResult in ipairs(SHIELD_ACTION_RESULTS) do
-    COMBAT_ACTION_RESULT_HANDLERS[actionResult] = { OnShieldCombatEvent, OnShieldCombatEvent }
-end
+-------------------------------------------------------------------------------
+-- Combat event registrations
+-------------------------------------------------------------------------------
 
 local INCOMING_COMBAT_EVENT_PREFIX = "TacticalDisplay_Data_Combat_In_"
 local OUTGOING_COMBAT_EVENT_PREFIX = "TacticalDisplay_Data_Combat_Out_"
 
+local _combatEventRegistrations = {}
+
 local function RegisterForCombatEvents()
-    for actionResult, callbackPair in pairs(COMBAT_ACTION_RESULT_HANDLERS) do
+    local handlers = {}
+    for _, actionResult in ipairs(SHIELD_ACTION_RESULTS) do
+        handlers[actionResult] = { OnShieldCombatEvent, OnShieldCombatEvent }
+    end
+    for _, actionResult in ipairs(DAMAGE_ACTION_RESULTS) do
+        handlers[actionResult] = { OnIncomingCombatEvent, OnOutgoingCombatEvent }
+    end
+
+    for actionResult, callbackPair in pairs(handlers) do
         local onIncoming, onOutgoing = unpack(callbackPair)
 
-        local incomingCombatEvent = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
-        EVENT_MANAGER:RegisterForEvent(incomingCombatEvent, EVENT_COMBAT_EVENT, onIncoming)
-        if not EVENT_MANAGER:AddFilterForEvent(
-                incomingCombatEvent,
-                EVENT_COMBAT_EVENT,
-                REGISTER_FILTER_IS_ERROR, false,
-                ---@diagnostic disable-next-line: redundant-parameter
-                REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
-                ---@diagnostic disable-next-line: redundant-parameter
-                REGISTER_FILTER_COMBAT_RESULT, actionResult
-            ) then
-            _LogError(string.format("Failed to apply filter for %s", incomingCombatEvent))
+        if onIncoming then
+            local inReg = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
+            EVENT_MANAGER:RegisterForEvent(inReg, EVENT_COMBAT_EVENT, onIncoming)
+            if not EVENT_MANAGER:AddFilterForEvent(
+                    inReg,
+                    EVENT_COMBAT_EVENT,
+                    REGISTER_FILTER_IS_ERROR, false,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_COMBAT_RESULT, actionResult
+                ) then
+                _LogError(string.format("Failed to apply filter for %s", inReg))
+            end
+            _combatEventRegistrations[#_combatEventRegistrations + 1] = inReg
         end
 
-        local outgoingCombatEvent = OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
-        EVENT_MANAGER:RegisterForEvent(outgoingCombatEvent, EVENT_COMBAT_EVENT, onOutgoing)
-        if not EVENT_MANAGER:AddFilterForEvent(
-                outgoingCombatEvent,
-                EVENT_COMBAT_EVENT,
-                REGISTER_FILTER_IS_ERROR, false,
-                ---@diagnostic disable-next-line: redundant-parameter
-                REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
-                ---@diagnostic disable-next-line: redundant-parameter
-                REGISTER_FILTER_COMBAT_RESULT, actionResult
-            ) then
-            _LogError(string.format("Failed to apply filter for %s", outgoingCombatEvent))
+        if onOutgoing then
+            local outReg = OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
+            EVENT_MANAGER:RegisterForEvent(outReg, EVENT_COMBAT_EVENT, onOutgoing)
+            if not EVENT_MANAGER:AddFilterForEvent(
+                    outReg,
+                    EVENT_COMBAT_EVENT,
+                    REGISTER_FILTER_IS_ERROR, false,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_COMBAT_RESULT, actionResult
+                ) then
+                _LogError(string.format("Failed to apply filter for %s", outReg))
+            end
+            _combatEventRegistrations[#_combatEventRegistrations + 1] = outReg
         end
+    end
+
+    -- Register for each of tracked DoT abilities as there are very few we need.
+    -- Track incoming DoTs only. No reason to track outgoing DoTs yet.
+    for _, actionResult in ipairs(DOT_ACTION_RESULTS) do
+        for abilityId, _ in pairs(_TRACKED_DOT_ABILITIES) do
+            local dotReg = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult) .. "_" .. tostring(abilityId)
+            EVENT_MANAGER:RegisterForEvent(dotReg, EVENT_COMBAT_EVENT, OnIncomingCombatEvent)
+            if not EVENT_MANAGER:AddFilterForEvent(
+                    dotReg,
+                    EVENT_COMBAT_EVENT,
+                    REGISTER_FILTER_IS_ERROR, false,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
+                    ---@diagnostic disable-next-line: redundant-parameter
+                    REGISTER_FILTER_COMBAT_RESULT, actionResult
+                ) then
+                _LogError(string.format("Failed to apply filter for %s", dotReg))
+            end
+            _combatEventRegistrations[#_combatEventRegistrations + 1] = dotReg
+        end
+    end
+
+    if _debugLog then
+        _LogDebug(string.format("Made %d combat event registrations", #_combatEventRegistrations))
     end
 end
 
 local function UnregisterForCombatEvents()
-    for actionResult, _ in pairs(COMBAT_ACTION_RESULT_HANDLERS) do
-        EVENT_MANAGER:UnregisterForEvent(INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult), EVENT_COMBAT_EVENT)
-        EVENT_MANAGER:UnregisterForEvent(OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult), EVENT_COMBAT_EVENT)
+    if _debugLog then
+        _LogDebug(string.format("Unregistering %d combat event registrations", #_combatEventRegistrations))
+    end
+
+    for i = #_combatEventRegistrations, 1, -1 do
+        EVENT_MANAGER:UnregisterForEvent(_damageShieldBuffer[i], EVENT_COMBAT_EVENT)
+        table.remove(_combatEventRegistrations, i)
     end
 end
+
+-------------------------------------------------------------------------------
+-- Public functions
+-------------------------------------------------------------------------------
 
 function _Data.Initialize(savedVars)
     local serverName = GetWorldName()

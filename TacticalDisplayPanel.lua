@@ -12,12 +12,6 @@ local _defaults = {
 local _opponentActiveDuration = 2
 local _opponentVisibleDuration = 30
 
-local UPDATE_RENDER_NAME = "TacticalDisplay_Panel_Render"
-local UPDATE_RENDER_DELAY_MS = 100
-
-local UPDATE_CLEANUP_NAME = "TacticalDisplay_Panel_Cleanup"
-local UPDATE_CLEANUP_INTERVAL_MS = 1000
-
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
 local CONTENT_PADDING = 8
@@ -39,163 +33,9 @@ local _fragment
 local _window
 local _opponentRows = {}
 
-local function EnforceVisibleOpponentLimit()
-    while #_visibleOpponentEntries > MAX_VISIBLE_OPPONENTS do
-        local oldestIndex = nil
-        local oldestSeen = math.huge
-
-        for index, entry in ipairs(_visibleOpponentEntries) do
-            local lastSeen = entry.opponent and entry.opponent.lastSeen or 0
-            if lastSeen < oldestSeen or (lastSeen == oldestSeen and (not oldestIndex or index > oldestIndex)) then
-                oldestIndex = index
-                oldestSeen = lastSeen
-            end
-        end
-
-        if oldestIndex then
-            table.remove(_visibleOpponentEntries, oldestIndex)
-        end
-    end
-end
-
-local function AddVisibleOpponent(opponent)
-    for _, entry in ipairs(_visibleOpponentEntries) do
-        if entry.opponent == opponent then
-            entry.isActive = true
-            return
-        end
-    end
-
-    table.insert(_visibleOpponentEntries, 1, {
-        opponent = opponent,
-        isActive = true,
-    })
-    EnforceVisibleOpponentLimit()
-end
-
-local function UpdateContentSize(width, height)
-    local panelWidth = math.max(MIN_WIDTH, (width or 0) + CONTENT_PADDING * 2)
-    local panelHeight = math.max(MIN_HEIGHT, (height or 0) + CONTENT_PADDING * 2)
-    _window:SetDimensions(panelWidth, panelHeight)
-end
-
-local function RenderOpponentList()
-    local maxTextWidth = 0
-    local numOpponents = 0
-    for index, row in ipairs(_opponentRows) do
-        local opponentEntry = _visibleOpponentEntries[index]
-        local opponent = opponentEntry and opponentEntry.opponent
-        if opponent then
-            local rowFont = opponentEntry.isActive and "ZoFontGameBold" or "ZoFontGame"
-            row.nameLabel:SetFont(rowFont)
-            row.detailLabel:SetFont(rowFont)
-
-            local markupParts = {}
-            local plainParts = {}
-            local attackIcon = nil
-
-            if opponent.lastDealtAttack then
-                local attack = opponent.lastDealtAttack
-                attackIcon = attack.abilityIcon
-
-                local abilityText = attack.abilityName
-                local abilityMarkup = abilityText
-                if attack.critical then
-                    abilityMarkup = "|cFFFF00" .. abilityText .. "|r"
-                end
-                if abilityText ~= "" then
-                    markupParts[#markupParts + 1] = abilityMarkup
-                    plainParts[#plainParts + 1] = abilityText
-                end
-
-                local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
-                local damageMarkup = damageText
-                if attack.blocked then
-                    damageMarkup = "|c7F00FF" .. damageText .. "|r"
-                elseif attack.shielded then
-                    damageMarkup = "|c00FF00" .. damageText .. "|r"
-                end
-
-                if damageText ~= "" then
-                    markupParts[#markupParts + 1] = damageMarkup
-                    plainParts[#plainParts + 1] = damageText
-                end
-            end
-
-            if (opponent.lastBaseDamage or 0) > 0 then
-                markupParts[#markupParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
-                plainParts[#plainParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
-            end
-            if (opponent.lastMitigation or 0) > 0 then
-                markupParts[#markupParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
-                plainParts[#plainParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
-            end
-
-            local detailText = table.concat(markupParts, "  ")
-            local plainDetailText = table.concat(plainParts, "  ")
-            row.nameLabel:SetText(opponent.name or "?")
-            row.nameLabel:SetDimensions(OPPONENT_NAME_WIDTH, OPPONENT_ROW_HEIGHT)
-            row.detailLabel:SetText(detailText)
-            local showIcon = attackIcon ~= nil
-            row.icon:SetHidden(not showIcon)
-            if showIcon then
-                row.icon:SetTexture(attackIcon)
-            end
-            row.control:SetHidden(false)
-            local detailWidth = row.detailLabel:GetStringWidth(plainDetailText)
-            row.detailLabel:SetDimensions(detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
-            row.control:SetDimensions(OPPONENT_DETAILS_OFFSET + detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
-            maxTextWidth = math.max(maxTextWidth, OPPONENT_DETAILS_OFFSET + detailWidth)
-            numOpponents = numOpponents + 1
-        else
-            row.nameLabel:SetText("")
-            row.detailLabel:SetText("")
-            row.icon:SetHidden(true)
-            row.control:SetHidden(true)
-        end
-    end
-
-    UpdateContentSize(maxTextWidth, numOpponents * OPPONENT_ROW_HEIGHT)
-end
-
-local _opponentRenderScheduled = false
-
-local function ScheduleOpponentRender()
-    if _opponentRenderScheduled then
-        return
-    end
-    _opponentRenderScheduled = true
-
-    EVENT_MANAGER:RegisterForUpdate(UPDATE_RENDER_NAME, UPDATE_RENDER_DELAY_MS, function()
-        EVENT_MANAGER:UnregisterForUpdate(UPDATE_RENDER_NAME)
-        _opponentRenderScheduled = false
-        RenderOpponentList()
-    end)
-end
-
-local function CleanupOpponentEntries()
-    local now = GetTimeStamp()
-    local changed = false
-    for index = #_visibleOpponentEntries, 1, -1 do
-        local opponentEntry = _visibleOpponentEntries[index]
-        local opponent = opponentEntry and opponentEntry.opponent
-        if not opponent
-            or not opponent.lastSeen
-            or now - opponent.lastSeen >= _opponentVisibleDuration then
-            table.remove(_visibleOpponentEntries, index)
-            changed = true
-        else
-            local isActive = now - opponent.lastSeen <= _opponentActiveDuration
-            if opponentEntry.isActive ~= isActive then
-                opponentEntry.isActive = isActive
-                changed = true
-            end
-        end
-    end
-    if changed then
-        ScheduleOpponentRender()
-    end
-end
+-------------------------------------------------------------------------------
+-- Create UI
+-------------------------------------------------------------------------------
 
 local function OnMouseDown(control, button)
     if button == MOUSE_BUTTON_INDEX_LEFT then
@@ -214,6 +54,12 @@ local function OnMouseUp(control, button)
             _config.offsetY = top
         end
     end
+end
+
+local function UpdateContentSize(width, height)
+    local panelWidth = math.max(MIN_WIDTH, (width or 0) + CONTENT_PADDING * 2)
+    local panelHeight = math.max(MIN_HEIGHT, (height or 0) + CONTENT_PADDING * 2)
+    _window:SetDimensions(panelWidth, panelHeight)
 end
 
 local function CreateUI()
@@ -291,13 +137,6 @@ local function CreateUI()
     UpdateContentSize()
 end
 
-local OPPONENT_UPDATE_NAME = "TacticalDisplayPanel_Update"
-
-local function OnOpponentUpdated(opponent)
-    AddVisibleOpponent(opponent)
-    ScheduleOpponentRender()
-end
-
 local function ApplyLayout()
     _window:ClearAnchors()
     _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
@@ -305,6 +144,189 @@ local function ApplyLayout()
         _config.offsetY or _defaults.offsetY)
     UpdateContentSize()
 end
+
+-------------------------------------------------------------------------------
+-- Update UI
+-------------------------------------------------------------------------------
+
+local function RenderOpponentList()
+    local maxTextWidth = 0
+    local numOpponents = 0
+    for index, row in ipairs(_opponentRows) do
+        local opponentEntry = _visibleOpponentEntries[index]
+        local opponent = opponentEntry and opponentEntry.opponent
+        if opponent then
+            local rowFont = opponentEntry.isActive
+                and "$(BOLD_FONT)|18|soft-shadow-thick"
+                or "$(MEDIUM_FONT)|18|soft-shadow-thick"
+            row.nameLabel:SetFont(rowFont)
+            row.detailLabel:SetFont(rowFont)
+
+            local markupParts = {}
+            local plainParts = {}
+            local attackIcon = nil
+
+            if opponent.lastDealtAttack then
+                local attack = opponent.lastDealtAttack
+                attackIcon = attack.abilityIcon
+
+                local abilityText = attack.abilityName
+                local abilityMarkup = abilityText
+                if attack.critical then
+                    abilityMarkup = "|cFFFF00" .. abilityText .. "|r"
+                end
+                if abilityText ~= "" then
+                    markupParts[#markupParts + 1] = abilityMarkup
+                    plainParts[#plainParts + 1] = abilityText
+                end
+
+                local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
+                local damageMarkup = damageText
+                if attack.blocked then
+                    damageMarkup = "|c7F00FF" .. damageText .. "|r"
+                elseif attack.shielded then
+                    damageMarkup = "|c00FF00" .. damageText .. "|r"
+                end
+
+                if damageText ~= "" then
+                    markupParts[#markupParts + 1] = damageMarkup
+                    plainParts[#plainParts + 1] = damageText
+                end
+            end
+
+            if (opponent.lastBaseDamage or 0) > 0 then
+                markupParts[#markupParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
+                plainParts[#plainParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
+            end
+            if (opponent.lastMitigation or 0) > 0 then
+                markupParts[#markupParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
+                plainParts[#plainParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
+            end
+
+            local detailText = table.concat(markupParts, "  ")
+            local plainDetailText = table.concat(plainParts, "  ")
+            row.nameLabel:SetText(opponent.name or "?")
+            row.nameLabel:SetDimensions(OPPONENT_NAME_WIDTH, OPPONENT_ROW_HEIGHT)
+            row.detailLabel:SetText(detailText)
+            local showIcon = attackIcon ~= nil
+            row.icon:SetHidden(not showIcon)
+            if showIcon then
+                row.icon:SetTexture(attackIcon)
+            end
+            row.control:SetHidden(false)
+            local detailWidth = row.detailLabel:GetStringWidth(plainDetailText)
+            row.detailLabel:SetDimensions(detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
+            row.control:SetDimensions(OPPONENT_DETAILS_OFFSET + detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
+            maxTextWidth = math.max(maxTextWidth, OPPONENT_DETAILS_OFFSET + detailWidth)
+            numOpponents = numOpponents + 1
+        else
+            row.nameLabel:SetText("")
+            row.detailLabel:SetText("")
+            row.icon:SetHidden(true)
+            row.control:SetHidden(true)
+        end
+    end
+
+    UpdateContentSize(maxTextWidth, numOpponents * OPPONENT_ROW_HEIGHT)
+end
+
+-------------------------------------------------------------------------------
+-- Schedule render and cleanup
+-------------------------------------------------------------------------------
+
+local UPDATE_RENDER_NAME = "TacticalDisplay_Panel_Render"
+local UPDATE_RENDER_DELAY_MS = 100
+
+local UPDATE_CLEANUP_NAME = "TacticalDisplay_Panel_Cleanup"
+local UPDATE_CLEANUP_INTERVAL_MS = 1000
+
+local _opponentRenderScheduled = false
+
+local function ScheduleOpponentRender()
+    if _opponentRenderScheduled then
+        return
+    end
+    _opponentRenderScheduled = true
+
+    EVENT_MANAGER:RegisterForUpdate(UPDATE_RENDER_NAME, UPDATE_RENDER_DELAY_MS, function()
+        EVENT_MANAGER:UnregisterForUpdate(UPDATE_RENDER_NAME)
+        _opponentRenderScheduled = false
+        RenderOpponentList()
+    end)
+end
+
+local function CleanupOpponentEntries()
+    local now = GetTimeStamp()
+    local changed = false
+    for index = #_visibleOpponentEntries, 1, -1 do
+        local opponentEntry = _visibleOpponentEntries[index]
+        local opponent = opponentEntry and opponentEntry.opponent
+        if not opponent
+            or not opponent.lastSeen
+            or now - opponent.lastSeen >= _opponentVisibleDuration then
+            table.remove(_visibleOpponentEntries, index)
+            changed = true
+        else
+            local isActive = now - opponent.lastSeen <= _opponentActiveDuration
+            if opponentEntry.isActive ~= isActive then
+                opponentEntry.isActive = isActive
+                changed = true
+            end
+        end
+    end
+    if changed then
+        ScheduleOpponentRender()
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Update view model
+-------------------------------------------------------------------------------
+
+local function EnforceVisibleOpponentLimit()
+    while #_visibleOpponentEntries > MAX_VISIBLE_OPPONENTS do
+        local oldestIndex = nil
+        local oldestSeen = math.huge
+
+        for index, entry in ipairs(_visibleOpponentEntries) do
+            local lastSeen = entry.opponent and entry.opponent.lastSeen or 0
+            if lastSeen < oldestSeen or (lastSeen == oldestSeen and (not oldestIndex or index > oldestIndex)) then
+                oldestIndex = index
+                oldestSeen = lastSeen
+            end
+        end
+
+        if oldestIndex then
+            table.remove(_visibleOpponentEntries, oldestIndex)
+        end
+    end
+end
+
+local function AddVisibleOpponent(opponent)
+    for _, entry in ipairs(_visibleOpponentEntries) do
+        if entry.opponent == opponent then
+            entry.isActive = true
+            return
+        end
+    end
+
+    table.insert(_visibleOpponentEntries, 1, {
+        opponent = opponent,
+        isActive = true,
+    })
+    EnforceVisibleOpponentLimit()
+end
+
+local OPPONENT_UPDATE_NAME = "TacticalDisplayPanel_Update"
+
+local function OnOpponentUpdated(opponent)
+    AddVisibleOpponent(opponent)
+    ScheduleOpponentRender()
+end
+
+-------------------------------------------------------------------------------
+-- Public functions
+-------------------------------------------------------------------------------
 
 function _Panel.Initialize(savedVars)
     savedVars.panel = savedVars.panel or _defaults
