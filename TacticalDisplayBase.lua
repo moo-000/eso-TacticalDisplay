@@ -21,8 +21,10 @@ _Base.HIDDEN_ABILITIES = {
     [21929] = true,  -- "Poisoned"
     [23232] = true,  -- "Hurricane"
     [28919] = true,  -- "Life Drain"
-    [31103] = true,  -- "Disintegrated Dragonfire .."
+    [31103] = true,  -- "Disintegrated Dragonfire"
+    [39267] = true,  -- "Soul Shatter"
     [40252] = true,  -- "Razor Caltrops"
+    [40337] = true,  -- "Prismatic Weapon"
     [44373] = true,  -- "Burning Embers"
     [44549] = true,  -- "Poison Injection"
     [45445] = true,  -- "Forceful"
@@ -37,16 +39,21 @@ _Base.HIDDEN_ABILITIES = {
     [80184] = true,  -- "Direwolf Lunge"
     [80189] = true,  -- "Direwolf Gnash"
     [80190] = true,  -- "Direwolf Gnash"
+    [85432] = true,  -- "Combustion"
     [100218] = true, -- "Solar Barrage"
     [117321] = true, -- "Summon Twilight Matriarch"
     [117854] = true, -- "Avid Boneyard"
     [118746] = true, -- "Deathbolt"
     [118766] = true, -- "Detonating Siphon"
+    [122774] = true, -- "Deathbolt"
+    [127791] = true, -- "Unstable Core"
+    [147843] = true, -- "Wrath of Elements"
+    [147844] = true, -- "Wrath of Elements"
     [147846] = true, -- "Wrath of Elements"
     [147847] = true, -- "Wrath of Elements"
+    [148797] = true, -- "Overcharged"
     [148800] = true, -- "Sundered"
     [148801] = true, -- "Hemorrhaging"
-    [148797] = true, -- "Overcharged"
     [215779] = true, -- "Diseased"
     [233041] = true, -- "Shared Pain"
     [258660] = true, -- "Molten Armaments"
@@ -55,9 +62,61 @@ _Base.HIDDEN_ABILITIES = {
 
 _Base.TRACKED_DOT_ABILITIES = {
     [17879] = true,  -- "Corrosive Armor"
-    [62606] = true,  -- "Crescent Sweep"
+    [85182] = true,  -- "Thrive in Chaos"
     [126941] = true, -- "Maarselok"
     -- [226394] = true, -- "Pyrebrand"
+}
+
+-- TODO: for damage accumulation and signature check
+_Base.PARENTS_OF_ABILITIES = {
+    [26792] = 26792,   -- "Biting Jabs"
+    [26794] = 26792,   -- "Biting Jabs"
+    [26797] = 26797,   -- "Puncturing Sweep"
+    [26799] = 26797,   -- "Puncturing Sweep"
+    [38839] = 38839,   -- "Rending Slashes" (1st)
+    [38840] = 38839,   -- "Rending Slashes" (2nd)
+    [38841] = 38839,   -- "Rending Slashes" (DoT)
+    [44432] = 26792,   -- "Biting Jabs"
+    [44436] = 26797,   -- "Puncturing Sweep"
+    [46340] = 46340,   -- "Force Shock"
+    [46341] = 46340,   -- "Force Shock"
+    [46343] = 46340,   -- "Force Shock"
+    [46348] = 46348,   -- "Crushing Shock"
+    [46350] = 46348,   -- "Crushing Shock"
+    [46351] = 46348,   -- "Crushing Shock"
+    [48011] = 48011,   -- "Crushing Shock"
+    [85179] = 85179,   -- "Thrive in Chaos"
+    [85180] = 85179,   -- "Thrive in Chaos"
+    [85182] = 85179,   -- "Thrive in Chaos" (DoT)
+    [182977] = 182977, -- "Escalating Runeblades"
+    [182978] = 182977, -- "Escalating Runeblades"
+    [182979] = 182977, -- "Escalating Runeblades"
+    [185803] = 185803, -- "Writhing Runeblades"
+    [185804] = 185803, -- "Writhing Runeblades"
+    [188186] = 185803, -- "Writhing Runeblades"
+    [188780] = 182977, -- "Escalating Runeblades"
+    [188787] = 185803, -- "Writhing Runeblades"
+}
+
+-- TODO: identify opponents' builds
+_Base.SIGNATURE_ABILITIES = {
+    [23239] = true,  -- "Streak"
+    [26792] = true,  -- "Biting Jabs"
+    [26797] = true,  -- "Puncturing Sweep"
+    [38687] = true,  -- "Focused Aim"
+    [38839] = true,  -- "Rending Slashes"
+    -- [46324] = true, -- "Crystal Fragments" (base)
+    [63457] = true,  -- "Ice Comet"
+    [76938] = true,  -- "Vicious Death"
+    [114716] = true, -- "Crystal Fragments" (proc)
+    [116991] = true, -- "Scavenging Maw"
+    [117715] = true, -- "Blighted Skeletal Detonation"
+    [123704] = true, -- "Venom Skull"
+    [163293] = true, -- "Deadlands Demolisher"
+    [183006] = true, -- "Cephaliarch's Flail"
+    [185823] = true, -- "Tentacular Dread"
+    [186370] = true, -- "Pragmatic Fatecarver"
+    [227072] = true, -- "Corpseburster"
 }
 
 -------------------------------------------------------------------------------
