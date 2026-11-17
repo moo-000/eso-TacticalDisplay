@@ -12,25 +12,27 @@ local _defaults = {
 local _opponentActiveDuration = 2
 local _opponentVisibleDuration = 30
 
+local FONT_BOLD = "$(BOLD_FONT)|18|soft-shadow-thick"
+local FONT_NORMAL = "$(MEDIUM_FONT)|18|soft-shadow-thick"
+
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
 local CONTENT_PADDING = 8
-local LABEL_SPACE = 4
 
 local MAX_VISIBLE_OPPONENTS = 12
 local OPPONENT_ROW_HEIGHT = 23
 local OPPONENT_NAME_WIDTH = 120
-local OPPONENT_ICON_MARGIN_L = 8
-local OPPONENT_ICON_MARGIN_R = 6
-local OPPONENT_ICON_SIZE = 20
-local OPPONENT_DETAILS_OFFSET = OPPONENT_NAME_WIDTH
-    + OPPONENT_ICON_MARGIN_L + OPPONENT_ICON_SIZE + OPPONENT_ICON_MARGIN_R
+local OPPONENT_DD_LABEL_WIDTH = 50
+local OPPONENT_TANK_LABEL_WIDTH = 40
+local OPPONENT_ATTACK_ICON_MARGIN = 6
+local OPPONENT_ATTACK_ICON_SIZE = 20
 
 local _visibleOpponentEntries = {} -- [index] = { opponent, isActive }
 
 local _isPanelEnabled = false
 local _fragment
 local _window
+local _reserve
 local _contentArea
 local _opponentRows = {}
 
@@ -38,17 +40,8 @@ local _opponentRows = {}
 -- Create UI
 -------------------------------------------------------------------------------
 
-local function OnMouseDown(control, button)
-    if button == MOUSE_BUTTON_INDEX_LEFT then
-        control:SetMovable(true)
-        control:StartMoving()
-    end
-end
-
-local function OnMouseUp(control, button)
-    control:SetMovable(false)
-    if button == MOUSE_BUTTON_INDEX_LEFT and _window and _config then
-        control:StopMovingOrResizing()
+local function SaveWindowPosition()
+    if _window and _config then
         local left, top = _window:GetLeft(), _window:GetTop()
         if left and top then
             _config.offsetX = left
@@ -57,41 +50,55 @@ local function OnMouseUp(control, button)
     end
 end
 
-local function UpdateContentSize(width, height)
-    local panelWidth = math.max(MIN_WIDTH, (width or 0) + CONTENT_PADDING * 2)
-    local panelHeight = math.max(MIN_HEIGHT, (height or 0) + CONTENT_PADDING * 2)
-    _window:SetDimensions(panelWidth, panelHeight)
-end
-
 local function CreateUI()
     _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayWindow")
-    _window:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
     _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _defaults.offsetX, _defaults.offsetY)
+    _window:SetResizeToFitDescendents(true)
+    _window:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
+    _window:SetResizeToFitPadding(CONTENT_PADDING * 2, CONTENT_PADDING * 2)
     _window:SetDrawTier(DT_LOW)
     _window:SetDrawLayer(DL_OVERLAY)
     _window:SetClampedToScreen(true)
     _window:SetMouseEnabled(true)
-    _window:SetMovable(false)
+    _window:SetMovable(true)
     _window:SetHidden(false)
-    _window:SetHandler("OnMouseDown", function(_, button) OnMouseDown(_window, button) end)
-    _window:SetHandler("OnMouseUp", function(_, button) OnMouseUp(_window, button) end)
+    _window:SetHandler("OnMoveStop", SaveWindowPosition)
+
+    _reserve = WINDOW_MANAGER:CreateControl(nil, _window, CT_CONTROL)
+    _reserve:SetAnchor(TOPLEFT, _window, TOPLEFT, 0, 0)
+    _reserve:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
+    _reserve:SetMouseEnabled(false)
+
+    local _reserveTitle = WINDOW_MANAGER:CreateControl(nil, _reserve, CT_LABEL)
+    _reserveTitle:SetFont(FONT_BOLD)
+    _reserveTitle:SetColor(0.95, 0.95, 1, 1)
+    _reserveTitle:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+    _reserveTitle:SetAnchor(TOPLEFT, _reserve, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
+    _reserveTitle:SetText("Tactical Display")
+    _reserveTitle:SetColor(1.0, 0.8, 0, 0.75)
+    _reserveTitle:SetHidden(false)
 
     local _backdrop = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
     _backdrop:SetAnchorFill(_window)
-    _backdrop:SetCenterColor(0, 0, 0, 0.16)
-    _backdrop:SetEdgeColor(0.65, 0.75, 0.9, 0.55)
+    _backdrop:SetExcludeFromResizeToFitExtents(true)
+    _backdrop:SetCenterColor(0.4, 0.2, 0, 0.2)
+
+    _backdrop:SetEdgeColor(1.0, 1.0, 1.0, 0.5)
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
     _backdrop:SetMouseEnabled(false)
 
     _contentArea = WINDOW_MANAGER:CreateControl("TacticalDisplayContent", _window, CT_CONTROL)
     _contentArea:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
-    _contentArea:SetAnchor(BOTTOMRIGHT, _window, BOTTOMRIGHT, -CONTENT_PADDING, -CONTENT_PADDING)
+    _contentArea:SetResizeToFitDescendents(true)
+    _contentArea:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
     _contentArea:SetMouseEnabled(false)
 
     for index = 1, MAX_VISIBLE_OPPONENTS do
         local rowControl = WINDOW_MANAGER:CreateControl(nil, _contentArea, CT_CONTROL)
         rowControl:SetAnchor(TOPLEFT, _contentArea, TOPLEFT, 0, 0)
         rowControl:SetDimensions(MIN_WIDTH, OPPONENT_ROW_HEIGHT)
+        rowControl:SetResizeToFitDescendents(true)
+        rowControl:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
         rowControl:SetMouseEnabled(false)
 
         local timeline = ANIMATION_MANAGER:CreateTimeline()
@@ -107,7 +114,7 @@ local function CreateUI()
         fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 2)
 
         local nameLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
-        nameLabel:SetFont("ZoFontGame")
+        nameLabel:SetFont(FONT_NORMAL)
         nameLabel:SetColor(0.95, 0.95, 1, 1)
         nameLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         nameLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
@@ -116,28 +123,49 @@ local function CreateUI()
         nameLabel:SetDimensions(OPPONENT_NAME_WIDTH, OPPONENT_ROW_HEIGHT)
         nameLabel:SetMouseEnabled(false)
 
-        local icon = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_TEXTURE)
-        icon:SetAnchor(LEFT, rowControl, LEFT, OPPONENT_NAME_WIDTH + OPPONENT_ICON_MARGIN_L, 0)
-        icon:SetDimensions(OPPONENT_ICON_SIZE, OPPONENT_ICON_SIZE)
-        icon:SetMouseEnabled(false)
-        icon:SetHidden(true)
+        local ddLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        ddLabel:SetFont(FONT_NORMAL)
+        ddLabel:SetColor(0.95, 0.95, 1, 1)
+        ddLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        ddLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        ddLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
+        ddLabel:SetAnchor(LEFT, nameLabel, RIGHT, 0, 0)
+        ddLabel:SetDimensions(OPPONENT_DD_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        ddLabel:SetMouseEnabled(false)
 
-        local detailLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
-        detailLabel:SetFont("ZoFontGame")
-        detailLabel:SetColor(0.95, 0.95, 1, 1)
-        detailLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        detailLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-        detailLabel:SetAnchor(TOPLEFT, rowControl, TOPLEFT, OPPONENT_DETAILS_OFFSET, 0)
-        detailLabel:SetDimensions(MIN_WIDTH, OPPONENT_ROW_HEIGHT)
-        detailLabel:SetMouseEnabled(false)
+        local tankLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        tankLabel:SetFont(FONT_NORMAL)
+        tankLabel:SetColor(0.95, 0.95, 1, 1)
+        tankLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+        tankLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        tankLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
+        tankLabel:SetAnchor(LEFT, ddLabel, RIGHT, 0, 0)
+        tankLabel:SetDimensions(OPPONENT_TANK_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        tankLabel:SetMouseEnabled(false)
+
+        local attackIcon = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_TEXTURE)
+        attackIcon:SetAnchor(LEFT, tankLabel, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
+        attackIcon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
+        attackIcon:SetMouseEnabled(false)
+        attackIcon:SetAlpha(0)
+
+        local attackLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        attackLabel:SetFont(FONT_NORMAL)
+        attackLabel:SetColor(0.95, 0.95, 1, 1)
+        attackLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        attackLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        attackLabel:SetAnchor(LEFT, attackIcon, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
+        attackLabel:SetMouseEnabled(false)
 
         rowControl:SetHidden(true)
         _opponentRows[index] = {
             control = rowControl,
-            nameLabel = nameLabel,
-            icon = icon,
-            detailLabel = detailLabel,
             timeline = timeline,
+            nameLabel = nameLabel,
+            ddLabel = ddLabel,
+            tankLabel = tankLabel,
+            attackIcon = attackIcon,
+            attackLabel = attackLabel,
         }
     end
 
@@ -147,8 +175,6 @@ local function CreateUI()
     end)
     SCENE_MANAGER:GetScene("hud"):AddFragment(_fragment)
     SCENE_MANAGER:GetScene("hudui"):AddFragment(_fragment)
-
-    UpdateContentSize()
 end
 
 local function ApplyLayout()
@@ -156,7 +182,6 @@ local function ApplyLayout()
     _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
         _config.offsetX or _defaults.offsetX,
         _config.offsetY or _defaults.offsetY)
-    UpdateContentSize()
 end
 
 -------------------------------------------------------------------------------
@@ -165,15 +190,28 @@ end
 
 local function RenderRowContents(row, opponentEntry)
     local opponent = opponentEntry.opponent
-    local rowFont = opponentEntry.isActive
-        and "$(BOLD_FONT)|18|soft-shadow-thick"
-        or "$(MEDIUM_FONT)|18|soft-shadow-thick"
-    row.nameLabel:SetFont(rowFont)
-    row.detailLabel:SetFont(rowFont)
+    local rowFont = opponentEntry.isActive and FONT_BOLD or FONT_NORMAL
 
-    local markupParts = {}
-    local plainParts = {}
+    row.nameLabel:SetFont(rowFont)
+    row.nameLabel:SetText(opponent.name or "?")
+
+    if (opponent.lastBaseDamage or 0) > 0 then
+        row.ddLabel:SetText(string.format("%d ||", opponent.lastBaseDamage))
+    else
+        row.ddLabel:SetText("||")
+    end
+    if (opponent.lastMitigation or 0) > 0 then
+        local m = opponent.lastMitigation
+        if m > 99 then
+            m = 99
+        end
+        row.tankLabel:SetText(string.format("%d%%", m))
+    else
+        row.tankLabel:SetText("?%")
+    end
+
     local attackIcon = nil
+    local attackMarkupParts = {}
 
     if opponent.lastDealtAttack then
         local attack = opponent.lastDealtAttack
@@ -185,8 +223,7 @@ local function RenderRowContents(row, opponentEntry)
             abilityMarkup = "|cFFFF00" .. abilityText .. "|r"
         end
         if abilityText ~= "" then
-            markupParts[#markupParts + 1] = abilityMarkup
-            plainParts[#plainParts + 1] = abilityText
+            attackMarkupParts[#attackMarkupParts + 1] = abilityMarkup
         end
 
         local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
@@ -198,45 +235,28 @@ local function RenderRowContents(row, opponentEntry)
         end
 
         if damageText ~= "" then
-            markupParts[#markupParts + 1] = damageMarkup
-            plainParts[#plainParts + 1] = damageText
+            attackMarkupParts[#attackMarkupParts + 1] = damageMarkup
         end
     end
 
-    if (opponent.lastBaseDamage or 0) > 0 then
-        markupParts[#markupParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
-        plainParts[#plainParts + 1] = string.format("[%d]", opponent.lastBaseDamage)
-    end
-    if (opponent.lastMitigation or 0) > 0 then
-        markupParts[#markupParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
-        plainParts[#plainParts + 1] = string.format("(%d%%)", opponent.lastMitigation)
-    end
+    row.attackIcon:SetAlpha(1)
+    row.attackIcon:SetTexture(attackIcon)
 
-    local detailText = table.concat(markupParts, "  ")
-    local plainDetailText = table.concat(plainParts, "  ")
-    row.nameLabel:SetText(opponent.name or "?")
-    row.nameLabel:SetDimensions(OPPONENT_NAME_WIDTH, OPPONENT_ROW_HEIGHT)
-    row.detailLabel:SetText(detailText)
-    local showIcon = attackIcon ~= nil
-    row.icon:SetHidden(not showIcon)
-    if showIcon then
-        row.icon:SetTexture(attackIcon)
-    end
+    row.attackLabel:SetFont(rowFont)
+    local attackText = table.concat(attackMarkupParts, "  ")
+    row.attackLabel:SetText(attackText)
+
     row.control:SetHidden(false)
-    local detailWidth = row.detailLabel:GetStringWidth(plainDetailText)
-    row.detailLabel:SetDimensions(detailWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
-    row.contentWidth = OPPONENT_DETAILS_OFFSET + detailWidth
-    row.control:SetDimensions(row.contentWidth + LABEL_SPACE, OPPONENT_ROW_HEIGHT)
     row.timeline:PlayFromStart()
 end
 
 local function ClearRowUI(row)
-    row.timeline:Stop()
     row.nameLabel:SetText("")
-    row.detailLabel:SetText("")
-    row.icon:SetHidden(true)
+    row.attackIcon:SetTexture(nil)
+    row.attackLabel:SetText("")
     row.control:SetHidden(true)
     row.contentWidth = 0
+    row.timeline:Stop()
 end
 
 local function RenderRowUI(index, row)
@@ -262,14 +282,11 @@ local function RenderRowUI(index, row)
 end
 
 local function RenderPanelUI()
-    local maxTextWidth = 0
+    _reserve:SetHidden(#_visibleOpponentEntries > 0)
+
     for index, row in ipairs(_opponentRows) do
         RenderRowUI(index, row)
-        if index <= #_visibleOpponentEntries then
-            maxTextWidth = math.max(maxTextWidth, row.contentWidth or 0)
-        end
     end
-    UpdateContentSize(maxTextWidth, #_visibleOpponentEntries * OPPONENT_ROW_HEIGHT)
 end
 
 local UPDATE_RENDER_NAME = "TacticalDisplay_Panel_Render"
