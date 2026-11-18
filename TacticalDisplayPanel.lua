@@ -21,7 +21,6 @@ local CONTENT_PADDING = 8
 
 local MAX_VISIBLE_OPPONENTS = 12
 local OPPONENT_ROW_HEIGHT = 23
-local OPPONENT_NAME_WIDTH = 120
 local OPPONENT_DD_LABEL_WIDTH = 50
 local OPPONENT_TANK_LABEL_WIDTH = 40
 local OPPONENT_ATTACK_ICON_MARGIN = 6
@@ -33,7 +32,8 @@ local _isPanelEnabled = false
 local _fragment
 local _window
 local _reserve
-local _contentArea
+local _contentAreaLeft
+local _contentAreaRight
 local _opponentRows = {}
 
 -------------------------------------------------------------------------------
@@ -50,9 +50,25 @@ local function SaveWindowPosition()
     end
 end
 
+local function CreateRowAnimation(parent)
+    local timeline = ANIMATION_MANAGER:CreateTimeline()
+
+    local scaleAnim = timeline:InsertAnimation(ANIMATION_SCALE, parent, 0)
+    scaleAnim:SetScaleValues(1.1, 1.0)
+    scaleAnim:SetDuration(100)
+    scaleAnim:SetEasingFunction(ZO_EaseOutQuadratic)
+
+    local fadeOutAnim = timeline:InsertAnimation(ANIMATION_ALPHA, parent, 0)
+    fadeOutAnim:SetAlphaValues(1, 0.5)
+    fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 2)
+
+    return timeline
+end
+
 local function CreateUI()
     _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayWindow")
     _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _defaults.offsetX, _defaults.offsetY)
+    -- _window:SetDimensions(MIN_WIDTH, CONTENT_PADDING * 2 + MAX_VISIBLE_OPPONENTS * OPPONENT_ROW_HEIGHT)
     _window:SetResizeToFitDescendents(true)
     _window:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
     _window:SetResizeToFitPadding(CONTENT_PADDING * 2, CONTENT_PADDING * 2)
@@ -71,11 +87,10 @@ local function CreateUI()
 
     local _reserveTitle = WINDOW_MANAGER:CreateControl(nil, _reserve, CT_LABEL)
     _reserveTitle:SetFont(FONT_BOLD)
-    _reserveTitle:SetColor(0.95, 0.95, 1, 1)
+    _reserveTitle:SetColor(1.0, 0.8, 0, 0.75)
     _reserveTitle:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
     _reserveTitle:SetAnchor(TOPLEFT, _reserve, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
     _reserveTitle:SetText("Tactical Display")
-    _reserveTitle:SetColor(1.0, 0.8, 0, 0.75)
     _reserveTitle:SetHidden(false)
 
     local _backdrop = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
@@ -87,55 +102,55 @@ local function CreateUI()
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
     _backdrop:SetMouseEnabled(false)
 
-    _contentArea = WINDOW_MANAGER:CreateControl("TacticalDisplayContent", _window, CT_CONTROL)
-    _contentArea:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
-    _contentArea:SetResizeToFitDescendents(true)
-    _contentArea:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
-    _contentArea:SetMouseEnabled(false)
+    _contentAreaLeft = WINDOW_MANAGER:CreateControl("TacticalDisplayContentLeft", _window, CT_CONTROL)
+    _contentAreaLeft:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
+    _contentAreaLeft:SetResizeToFitDescendents(true)
+    _contentAreaLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
+    _contentAreaLeft:SetMouseEnabled(false)
+
+    _contentAreaRight = WINDOW_MANAGER:CreateControl("TacticalDisplayContentRight", _window, CT_CONTROL)
+    _contentAreaRight:SetAnchor(TOPLEFT, _contentAreaLeft, TOPRIGHT, CONTENT_PADDING, 0)
+    _contentAreaRight:SetResizeToFitDescendents(true)
+    _contentAreaRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
+    _contentAreaRight:SetMouseEnabled(false)
 
     for index = 1, MAX_VISIBLE_OPPONENTS do
-        local rowControl = WINDOW_MANAGER:CreateControl(nil, _contentArea, CT_CONTROL)
-        rowControl:SetAnchor(TOPLEFT, _contentArea, TOPLEFT, 0, 0)
-        rowControl:SetDimensions(MIN_WIDTH, OPPONENT_ROW_HEIGHT)
-        rowControl:SetResizeToFitDescendents(true)
-        rowControl:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
-        rowControl:SetMouseEnabled(false)
+        local groupLeft = WINDOW_MANAGER:CreateControl(nil, _contentAreaLeft, CT_CONTROL)
+        groupLeft:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, 0)
+        groupLeft:SetDimensions(0, OPPONENT_ROW_HEIGHT)
+        groupLeft:SetResizeToFitDescendents(true)
+        groupLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
+        groupLeft:SetMouseEnabled(false)
 
-        local timeline = ANIMATION_MANAGER:CreateTimeline()
-
-        local scaleAnim = timeline:InsertAnimation(ANIMATION_SCALE, rowControl, 0)
-        scaleAnim:SetScaleValues(1.1, 1.0)
-        scaleAnim:SetDuration(100)
-        -- scaleAnim:SetScaleFromCenter(true)
-        scaleAnim:SetEasingFunction(ZO_EaseOutQuadratic)
-
-        local fadeOutAnim = timeline:InsertAnimation(ANIMATION_ALPHA, rowControl, 0)
-        fadeOutAnim:SetAlphaValues(1, 0.5)
-        fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 2)
-
-        local nameLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        local nameLabel = WINDOW_MANAGER:CreateControl(nil, groupLeft, CT_LABEL)
         nameLabel:SetFont(FONT_NORMAL)
-        nameLabel:SetColor(0.95, 0.95, 1, 1)
+        nameLabel:SetColor(1, 1, 1, 1)
         nameLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         nameLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         nameLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
-        nameLabel:SetAnchor(TOPLEFT, rowControl, TOPLEFT, 0, 0)
-        nameLabel:SetDimensions(OPPONENT_NAME_WIDTH, OPPONENT_ROW_HEIGHT)
+        nameLabel:SetAnchor(TOPLEFT, groupLeft, TOPLEFT, 0, 0)
         nameLabel:SetMouseEnabled(false)
 
-        local ddLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        local groupRight = WINDOW_MANAGER:CreateControl(nil, _contentAreaRight, CT_CONTROL)
+        groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, 0)
+        groupRight:SetDimensions(0, OPPONENT_ROW_HEIGHT)
+        groupRight:SetResizeToFitDescendents(true)
+        groupRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
+        groupRight:SetMouseEnabled(false)
+
+        local ddLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
         ddLabel:SetFont(FONT_NORMAL)
-        ddLabel:SetColor(0.95, 0.95, 1, 1)
+        ddLabel:SetColor(1, 1, 1, 1)
         ddLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         ddLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         ddLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
-        ddLabel:SetAnchor(LEFT, nameLabel, RIGHT, 0, 0)
+        ddLabel:SetAnchor(TOPLEFT, groupRight, TOPLEFT, 0, 0)
         ddLabel:SetDimensions(OPPONENT_DD_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
         ddLabel:SetMouseEnabled(false)
 
-        local tankLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        local tankLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
         tankLabel:SetFont(FONT_NORMAL)
-        tankLabel:SetColor(0.95, 0.95, 1, 1)
+        tankLabel:SetColor(1, 1, 1, 1)
         tankLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         tankLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         tankLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
@@ -143,24 +158,27 @@ local function CreateUI()
         tankLabel:SetDimensions(OPPONENT_TANK_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
         tankLabel:SetMouseEnabled(false)
 
-        local attackIcon = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_TEXTURE)
+        local attackIcon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
         attackIcon:SetAnchor(LEFT, tankLabel, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackIcon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
         attackIcon:SetMouseEnabled(false)
         attackIcon:SetAlpha(0)
 
-        local attackLabel = WINDOW_MANAGER:CreateControl(nil, rowControl, CT_LABEL)
+        local attackLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
         attackLabel:SetFont(FONT_NORMAL)
-        attackLabel:SetColor(0.95, 0.95, 1, 1)
+        attackLabel:SetColor(1, 1, 1, 1)
         attackLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         attackLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         attackLabel:SetAnchor(LEFT, attackIcon, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackLabel:SetMouseEnabled(false)
 
-        rowControl:SetHidden(true)
+        groupLeft:SetHidden(true)
+        groupRight:SetHidden(true)
         _opponentRows[index] = {
-            control = rowControl,
-            timeline = timeline,
+            groupLeft = groupLeft,
+            groupRight = groupRight,
+            timelineLeft = CreateRowAnimation(groupLeft),
+            timelineRight = CreateRowAnimation(groupRight),
             nameLabel = nameLabel,
             ddLabel = ddLabel,
             tankLabel = tankLabel,
@@ -197,8 +215,10 @@ local function RenderRowContents(row, opponentEntry)
 
     if (opponent.lastBaseDamage or 0) > 0 then
         row.ddLabel:SetText(string.format("%d ||", opponent.lastBaseDamage))
+        row.ddLabel:SetColor(1, 1, 1, 1.0)
     else
-        row.ddLabel:SetText("||")
+        row.ddLabel:SetText("? ||")
+        row.ddLabel:SetColor(1, 1, 1, 0.5)
     end
     if (opponent.lastMitigation or 0) > 0 then
         local m = opponent.lastMitigation
@@ -206,8 +226,10 @@ local function RenderRowContents(row, opponentEntry)
             m = 99
         end
         row.tankLabel:SetText(string.format("%d%%", m))
+        row.tankLabel:SetColor(1, 1, 1, 1.0)
     else
         row.tankLabel:SetText("?%")
+        row.tankLabel:SetColor(1, 1, 1, 0.5)
     end
 
     local attackIcon = nil
@@ -246,17 +268,20 @@ local function RenderRowContents(row, opponentEntry)
     local attackText = table.concat(attackMarkupParts, "  ")
     row.attackLabel:SetText(attackText)
 
-    row.control:SetHidden(false)
-    row.timeline:PlayFromStart()
+    row.groupLeft:SetHidden(false)
+    row.groupRight:SetHidden(false)
+    row.timelineLeft:PlayFromStart()
+    row.timelineRight:PlayFromStart()
 end
 
 local function ClearRowUI(row)
     row.nameLabel:SetText("")
     row.attackIcon:SetTexture(nil)
     row.attackLabel:SetText("")
-    row.control:SetHidden(true)
-    row.contentWidth = 0
-    row.timeline:Stop()
+    row.groupLeft:SetHidden(true)
+    row.groupRight:SetHidden(true)
+    row.timelineLeft:Stop()
+    row.timelineRight:Stop()
 end
 
 local function RenderRowUI(index, row)
@@ -270,13 +295,14 @@ local function RenderRowUI(index, row)
     end
 
     if row.needsAnchor then
-        row.control:ClearAnchors()
-        row.control:SetAnchor(TOPLEFT, _contentArea, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.groupLeft:ClearAnchors()
+        row.groupLeft:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.groupRight:ClearAnchors()
+        row.groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.needsAnchor = false
     end
     if row.needsRender then
         RenderRowContents(row, entry)
-        row.control:SetHidden(false)
         row.needsRender = false
     end
 end
