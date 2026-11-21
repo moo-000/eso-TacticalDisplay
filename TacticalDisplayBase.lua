@@ -6,6 +6,9 @@ local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
 local _debugLog -- boolean
 
+-- Hidden from current attack report and "recent" update.
+-- Can still be tracked if they're also signature abilities.
+-- DoTs are listed, though no effect for now (see TRACKED_DOT_ABILITIES).
 _Base.HIDDEN_ABILITIES = {
     [17895] = true,  -- "Fiery Weapon"
     [17897] = true,  -- "Frozen Weapon"
@@ -21,6 +24,9 @@ _Base.HIDDEN_ABILITIES = {
     [21929] = true,  -- "Poisoned"
     [23232] = true,  -- "Hurricane"
     [28919] = true,  -- "Life Drain"
+    [29528] = true,  -- "Unstable Clannfear"
+    [29529] = true,  -- "Unstable Clannfear"
+    [29809] = true,  -- "Atronach Lightning Storm"
     [31103] = true,  -- "Disintegrated Dragonfire"
     [39267] = true,  -- "Soul Shatter"
     [40252] = true,  -- "Razor Caltrops"
@@ -33,46 +39,45 @@ _Base.HIDDEN_ABILITIES = {
     [46746] = true,  -- "Absorb Stamina"
     [46749] = true,  -- "Decrease Health"
     [62529] = true,  -- "Quick Cloak"
-    [62951] = true,  -- "Blockage of Frost"
+    [62951] = true,  -- "Blockade of Frost"
+    [62990] = true,  -- "Blockade of Storms"
     [67204] = true,  -- "Leeching Plate"
+    [77186] = true,  -- "Volatile Familiar"
     [80170] = true,  -- "Burning Light"
     [80184] = true,  -- "Direwolf Lunge"
     [80189] = true,  -- "Direwolf Gnash"
     [80190] = true,  -- "Direwolf Gnash"
     [85432] = true,  -- "Combustion"
     [100218] = true, -- "Solar Barrage"
+    [108936] = true, -- "Corrosive Drain"
+    [117255] = true, -- "Volatile Familiar"
+    [117320] = true, -- "Summon Twilight Matriarch"
     [117321] = true, -- "Summon Twilight Matriarch"
+    [117715] = true, -- "Blighted Skeletal Detonation"; can't track as it's from pet
     [117854] = true, -- "Avid Boneyard"
     [118746] = true, -- "Deathbolt"
     [118766] = true, -- "Detonating Siphon"
     [122774] = true, -- "Deathbolt"
     [127791] = true, -- "Unstable Core"
-    [147843] = true, -- "Wrath of Elements"
-    [147844] = true, -- "Wrath of Elements"
-    [147846] = true, -- "Wrath of Elements"
-    [147847] = true, -- "Wrath of Elements"
     [148797] = true, -- "Overcharged"
     [148800] = true, -- "Sundered"
     [148801] = true, -- "Hemorrhaging"
+    [181056] = true, -- "Crystal Weapon" (2nd)
     [215779] = true, -- "Diseased"
     [233041] = true, -- "Shared Pain"
     [258660] = true, -- "Molten Armaments"
     [258665] = true, -- "Igneous Weapons"
 }
 
-_Base.TRACKED_DOT_ABILITIES = {
-    [17879] = true,  -- "Corrosive Armor"
-    [85182] = true,  -- "Thrive in Chaos"
-    [126941] = true, -- "Maarselok"
-    -- [226394] = true, -- "Pyrebrand"
-}
-
--- TODO: for damage accumulation and signature check
+-- Normalize ability IDs; applied after hidden abilities filter
 _Base.PARENTS_OF_ABILITIES = {
+    [18396] = 18396,   -- "Heavy Attack (Lightning)"
+    [19277] = 19277,   -- "Heavy Attack (Lightning)"
     [26792] = 26792,   -- "Biting Jabs"
     [26794] = 26792,   -- "Biting Jabs"
     [26797] = 26797,   -- "Puncturing Sweep"
     [26799] = 26797,   -- "Puncturing Sweep"
+    [38455] = 38455,   -- "Reverberating Bash" (1st)
     [38839] = 38839,   -- "Rending Slashes" (1st)
     [38840] = 38839,   -- "Rending Slashes" (2nd)
     [38841] = 38839,   -- "Rending Slashes" (DoT)
@@ -88,6 +93,13 @@ _Base.PARENTS_OF_ABILITIES = {
     [85179] = 85179,   -- "Thrive in Chaos"
     [85180] = 85179,   -- "Thrive in Chaos"
     [85182] = 85179,   -- "Thrive in Chaos" (DoT)
+    [125947] = 38455,  -- "Reverberating Bash" (2nd)
+    [143804] = 143804, -- "Crystal Weapon" (1st)
+    [147843] = 147843, -- "Wrath of Elements"
+    [147844] = 147843, -- "Wrath of Elements"
+    [147846] = 147843, -- "Wrath of Elements"
+    [147847] = 147843, -- "Wrath of Elements"
+    [181056] = 143804, -- "Crystal Weapon" (2nd)
     [182977] = 182977, -- "Escalating Runeblades"
     [182978] = 182977, -- "Escalating Runeblades"
     [182979] = 182977, -- "Escalating Runeblades"
@@ -96,27 +108,51 @@ _Base.PARENTS_OF_ABILITIES = {
     [188186] = 185803, -- "Writhing Runeblades"
     [188780] = 182977, -- "Escalating Runeblades"
     [188787] = 185803, -- "Writhing Runeblades"
+    -- [216973] = 216973, -- "Sundering Throw" (main)
+    [217096] = 217096, -- "Shield Throw" (bash); can't link as it follows all Shield Throw variants
+    -- [217061] = 217061, -- "Binding Throw" (main)
+    -- [217808] = 217808, -- "Magical/Chilling Throw" (main)
 }
 
--- TODO: identify opponents' builds
+-- DoT abilities to register for combat events explicitly
+-- Because there are very few DoTs to track for now.
+-- This might change in future to rely on HIDDEN_ABILITIES.
+_Base.TRACKED_DOT_ABILITIES = {
+    [17879] = true,  -- "Corrosive Armor"
+    [85182] = true,  -- "Thrive in Chaos"
+    [126941] = true, -- "Maarselok"
+    [226394] = true, -- "Pyrebrand"
+}
+
+-- To identify opponents' builds
 _Base.SIGNATURE_ABILITIES = {
+    [17879] = true,  -- "Corrosive Armor"
     [23239] = true,  -- "Streak"
+    [24329] = true,  -- "Daedric Prey"
     [26792] = true,  -- "Biting Jabs"
     [26797] = true,  -- "Puncturing Sweep"
+    [38452] = true,  -- "Power Slam"
+    [38455] = true,  -- "Reverberating Bash"
     [38687] = true,  -- "Focused Aim"
     [38839] = true,  -- "Rending Slashes"
     -- [46324] = true, -- "Crystal Fragments" (base)
     [63457] = true,  -- "Ice Comet"
     [76938] = true,  -- "Vicious Death"
+    [85182] = true,  -- "Thrive in Chaos"
     [114716] = true, -- "Crystal Fragments" (proc)
     [116991] = true, -- "Scavenging Maw"
-    [117715] = true, -- "Blighted Skeletal Detonation"
     [123704] = true, -- "Venom Skull"
+    [126941] = true, -- "Maarselok"
+    [143804] = true, -- "Crystal Weapon" (1st)
+    [147843] = true, -- "Wrath of Elements"
     [163293] = true, -- "Deadlands Demolisher"
     [183006] = true, -- "Cephaliarch's Flail"
     [185823] = true, -- "Tentacular Dread"
     [186370] = true, -- "Pragmatic Fatecarver"
+    [217096] = true, -- "Shield Throw" (bash)
     [227072] = true, -- "Corpseburster"
+    [226394] = true, -- "Pyrebrand"
+    [260053] = true, -- "Gorethief"
 }
 
 -------------------------------------------------------------------------------

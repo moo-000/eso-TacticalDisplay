@@ -1,8 +1,10 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
-local _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
 local _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES
+local _PARENTS_OF_ABILITIES = TacticalDisplay.Base.PARENTS_OF_ABILITIES
+local _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
+local _SIGNATURE_ABILITIES = TacticalDisplay.Base.SIGNATURE_ABILITIES
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
@@ -37,6 +39,8 @@ local CRITICAL_ACTION_RESULTS = {
     [ACTION_RESULT_CRITICAL_DAMAGE] = true,
     [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
+
+local EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS = 100
 
 -------------------------------------------------------------------------------
 -- Shielded damage events: buffer absorbed damages for pairing later
@@ -140,16 +144,56 @@ local function GetOrCreateOpponent(key)
             --     abilityIcon = nil,
             --     abilityName = "Bash",
             --     damage = 100,
-            --     critical = true,
-            --     blocked = false,
-            --     shielded = false,
+            --     isCritical = true,
+            --     isBlocked = false,
+            --     isShielded = false,
             -- },
             lastBaseDamage = 0,
             lastMitigation = 0,
+            numAttacks = 0,
+            signature = {},
         }
         _opponentTable[key] = opponent
     end
     return opponent
+end
+
+local function UpdateOpponentSignature(opponent)
+    local lastDealtAttack = opponent.lastDealtAttack
+    if not lastDealtAttack then
+        return
+    end
+
+    local numAttacks = opponent.numAttacks or 0
+    local signature = opponent.signature or {}
+    opponent.signature = signature
+
+    if lastDealtAttack.isSignature then
+        local abilityId = lastDealtAttack.abilityId
+        local sitem = signature[abilityId]
+        if not sitem then
+            sitem = {
+                abilityName = lastDealtAttack.abilityName,
+                abilityIcon = lastDealtAttack.abilityIcon,
+            }
+            signature[abilityId] = sitem
+        end
+        sitem.lastUsed = numAttacks
+    end
+
+    if numAttacks % 20 == 0 then
+        local expiry = numAttacks - EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS
+        for abilityId, sitem in pairs(signature) do
+            if not sitem.lastUsed or sitem.lastUsed < expiry then
+                signature[abilityId] = nil
+                if _debugLog then
+                    _LogDebug(string.format("Expire signature ability from [%s]: %d %s: %d < %d - %d",
+                        opponent.name, abilityId, sitem.abilityName,
+                        sitem.lastUsed or 0, numAttacks, EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS))
+                end
+            end
+        end
+    end
 end
 
 local function InvokeOnOpponentUpdated(opponent)
@@ -183,54 +227,76 @@ local function OnIncomingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _HIDDEN_ABILITIES[abilityId] then
+        or _HIDDEN_ABILITIES[abilityId] == true then
         return
     end
 
-    local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
-    local damage = hitValue + overflow + shielded
-    if damage == 0 then
+    local sessionTimeMs = GetGameTimeMilliseconds()
+    local shieldedDamage = PullShieldedDamage(sessionTimeMs, sourceUnitId, targetUnitId)
+    local totalDamage = hitValue + overflow + shieldedDamage
+    if totalDamage == 0 then
         if _debugLog then
             _LogDebug(string.format("Exclude zero incoming damage from [%s]: %d %s: %d %d %d",
                 sourceName, abilityId, abilityName,
                 result, sourceUnitId, targetUnitId))
         end
         return
-    elseif damage < _minDamage then
+    elseif totalDamage < _minDamage then
         return
     end
 
-    local blocked = BLOCKED_ACTION_RESULTS[result]
-    local critical = CRITICAL_ACTION_RESULTS[result]
+    local isBlocked = BLOCKED_ACTION_RESULTS[result]
+    local isCritical = CRITICAL_ACTION_RESULTS[result]
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, sourceName)
     local opponent = GetOrCreateOpponent(opponentKey)
     opponent.lastSeen = GetTimeStamp()
-    opponent.lastDealtAttack = {
-        abilityId = abilityId,
-        abilityName = abilityName,
-        abilityIcon = abilityId and GetAbilityIcon(abilityId) or nil,
-        damage = damage,
-        critical = critical,
-        blocked = blocked,
-        shielded = shielded > 0,
-    }
 
-    if not blocked
-        and not critical
-        and shielded == 0
+    local baseAbilityId = _PARENTS_OF_ABILITIES[abilityId] or abilityId
+    local previousAttack = opponent.lastDealtAttack
+    if previousAttack ~= nil
+        and previousAttack.abilityId == baseAbilityId
+        and previousAttack.sessionTimeMs ~= nil
+        and previousAttack.sessionTimeMs <= sessionTimeMs
+        and previousAttack.sessionTimeMs >= sessionTimeMs - 100 then
+        previousAttack.abilityIcon = abilityId and GetAbilityIcon(abilityId) or previousAttack.abilityIcon
+        previousAttack.damage = previousAttack.damage + totalDamage
+        previousAttack.isCritical = isCritical
+        previousAttack.isBlocked = isBlocked
+        previousAttack.isShielded = shieldedDamage > 0
+        previousAttack.sessionTimeMs = sessionTimeMs
+    else
+        opponent.lastDealtAttack = {
+            abilityId = baseAbilityId,
+            abilityName = abilityName,
+            abilityIcon = abilityId and GetAbilityIcon(abilityId) or nil,
+            damage = totalDamage,
+            isCritical = isCritical,
+            isBlocked = isBlocked,
+            isShielded = shieldedDamage > 0,
+            isSignature = _SIGNATURE_ABILITIES[baseAbilityId],
+            sessionTimeMs = sessionTimeMs,
+        }
+        opponent.numAttacks = (opponent.numAttacks or 0) + 1
+    end
+
+    if not isBlocked
+        and not isCritical
+        and shieldedDamage == 0
         and overflow == 0 then
         -- record opponent base damage; need normalization later
         if abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
-            opponent.lastBaseDamage = damage
+            opponent.lastBaseDamage = totalDamage
         end
     end
+
+    UpdateOpponentSignature(opponent)
 
     if _debugLog then
         _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d+%d %s(base %d): %d %d %d",
             opponentKey, abilityId, abilityName,
-            hitValue, overflow, shielded,
-            (critical and "C" or "") .. (blocked and "B" or ""),
+            hitValue, overflow, shieldedDamage,
+            (isCritical and "C" or "") .. (isBlocked and "B" or ""),
             opponent.lastBaseDamage,
             result, sourceUnitId, targetUnitId))
     end
@@ -261,44 +327,44 @@ local function OnOutgoingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _HIDDEN_ABILITIES[abilityId] then
+        or _HIDDEN_ABILITIES[abilityId] == true then
         return
     end
 
-    local shielded = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
-    local damage = hitValue + overflow + shielded
-    if damage == 0 then
+    local shieldedDamage = PullShieldedDamage(GetGameTimeMilliseconds(), sourceUnitId, targetUnitId)
+    local totalDamage = hitValue + overflow + shieldedDamage
+    if totalDamage == 0 then
         if _debugLog then
             _LogDebug(string.format("Exclude zero outgoing damage from [%s]: %d %s: %d %d %d",
                 sourceName, abilityId, abilityName,
                 result, sourceUnitId, targetUnitId))
         end
         return
-    elseif damage < _minDamage then
+    elseif totalDamage < _minDamage then
         return
     end
 
-    local blocked = BLOCKED_ACTION_RESULTS[result]
-    local critical = CRITICAL_ACTION_RESULTS[result]
+    local isBlocked = BLOCKED_ACTION_RESULTS[result]
+    local isCritical = CRITICAL_ACTION_RESULTS[result]
 
     local opponentKey = zo_strformat(SI_UNIT_NAME, targetName)
     local opponent = GetOrCreateOpponent(opponentKey)
     opponent.lastSeen = GetTimeStamp()
 
-    if not blocked
-        and not critical
-        and shielded == 0
+    if not isBlocked
+        and not isCritical
+        and shieldedDamage == 0
         and overflow == 0 then
         -- record opponent mitigation; inaccurate if damage lands right after bar-swapping or buf change
-        local castedDamage = _GetMeasurablePlayerDamage(abilityId, abilityName)
-        if castedDamage > 0 then
-            local mitigation = math.floor((1 - damage / castedDamage) * 100 + 0.5)
+        local sourceDamage = _GetMeasurablePlayerDamage(abilityId, abilityName)
+        if sourceDamage > 0 then
+            local mitigation = math.floor((1 - totalDamage / sourceDamage) * 100 + 0.5)
             if mitigation >= 0 then
                 opponent.lastMitigation = mitigation
                 if _debugLog then
                     _LogDebug(string.format("Update mitigation %d %s %d => %s %d, mitigated %d%%",
-                        abilityId, abilityName, castedDamage,
-                        opponentKey, damage, mitigation))
+                        abilityId, abilityName, sourceDamage,
+                        opponentKey, totalDamage, mitigation))
                 end
             end
         end
@@ -307,8 +373,8 @@ local function OnOutgoingCombatEvent(
     if _debugLog then
         _LogDebug(string.format("Outgoing to [%s]: %d %s, %d+%d+%d %s(%d%%): %d %d %d",
             opponentKey, abilityId, abilityName,
-            hitValue, overflow, shielded,
-            (critical and "C" or "") .. (blocked and "B" or ""),
+            hitValue, overflow, shieldedDamage,
+            (isCritical and "C" or "") .. (isBlocked and "B" or ""),
             opponent.lastMitigation,
             result, sourceUnitId, targetUnitId))
     end

@@ -21,6 +21,7 @@ local CONTENT_PADDING = 8
 
 local MAX_VISIBLE_OPPONENTS = 12
 local OPPONENT_ROW_HEIGHT = 23
+local OPPONENT_SIGNATURE_CAP = 4
 local OPPONENT_DD_LABEL_WIDTH = 50
 local OPPONENT_TANK_LABEL_WIDTH = 40
 local OPPONENT_ATTACK_ICON_MARGIN = 6
@@ -59,8 +60,8 @@ local function CreateRowAnimation(parent)
     scaleAnim:SetEasingFunction(ZO_EaseOutQuadratic)
 
     local fadeOutAnim = timeline:InsertAnimation(ANIMATION_ALPHA, parent, 0)
-    fadeOutAnim:SetAlphaValues(1, 0.5)
-    fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 2)
+    fadeOutAnim:SetAlphaValues(1, 0.25)
+    fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 4 * 3)
 
     return timeline
 end
@@ -116,19 +117,19 @@ local function CreateUI()
 
     for index = 1, MAX_VISIBLE_OPPONENTS do
         local groupLeft = WINDOW_MANAGER:CreateControl(nil, _contentAreaLeft, CT_CONTROL)
-        groupLeft:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, 0)
+        groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, 0)
         groupLeft:SetDimensions(0, OPPONENT_ROW_HEIGHT)
         groupLeft:SetResizeToFitDescendents(true)
         groupLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
         groupLeft:SetMouseEnabled(false)
 
         local nameLabel = WINDOW_MANAGER:CreateControl(nil, groupLeft, CT_LABEL)
-        nameLabel:SetFont(FONT_NORMAL)
-        nameLabel:SetColor(1, 1, 1, 1)
+        nameLabel:SetAnchor(TOPRIGHT, groupLeft, TOPRIGHT, 0, 0)
         nameLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         nameLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         nameLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
-        nameLabel:SetAnchor(TOPLEFT, groupLeft, TOPLEFT, 0, 0)
+        nameLabel:SetFont(FONT_NORMAL)
+        nameLabel:SetColor(1, 1, 1, 1)
         nameLabel:SetMouseEnabled(false)
 
         local groupRight = WINDOW_MANAGER:CreateControl(nil, _contentAreaRight, CT_CONTROL)
@@ -138,38 +139,52 @@ local function CreateUI()
         groupRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
         groupRight:SetMouseEnabled(false)
 
+        local signatureIcons = {}
+        for i = 1, OPPONENT_SIGNATURE_CAP do
+            local icon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
+            if i == 1 then
+                icon:SetAnchor(TOPLEFT, groupRight, TOPLEFT, 0, 0)
+            else
+                icon:SetAnchor(TOPLEFT, signatureIcons[i - 1], TOPRIGHT, 1, 0)
+            end
+            icon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
+            icon:SetMouseEnabled(false)
+            icon:SetHidden(true)
+            signatureIcons[i] = icon
+        end
+
         local ddLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
-        ddLabel:SetFont(FONT_NORMAL)
-        ddLabel:SetColor(1, 1, 1, 1)
+        ddLabel:SetAnchor(TOPLEFT, signatureIcons[OPPONENT_SIGNATURE_CAP], TOPRIGHT, 0, 0)
+        ddLabel:SetDimensions(OPPONENT_DD_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
         ddLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         ddLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         ddLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
-        ddLabel:SetAnchor(TOPLEFT, groupRight, TOPLEFT, 0, 0)
-        ddLabel:SetDimensions(OPPONENT_DD_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        ddLabel:SetFont(FONT_NORMAL)
+        ddLabel:SetColor(1, 1, 1, 1)
         ddLabel:SetMouseEnabled(false)
 
         local tankLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
-        tankLabel:SetFont(FONT_NORMAL)
-        tankLabel:SetColor(1, 1, 1, 1)
+        tankLabel:SetAnchor(LEFT, ddLabel, RIGHT, 0, 0)
+        tankLabel:SetDimensions(OPPONENT_TANK_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
         tankLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         tankLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         tankLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
-        tankLabel:SetAnchor(LEFT, ddLabel, RIGHT, 0, 0)
-        tankLabel:SetDimensions(OPPONENT_TANK_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        tankLabel:SetFont(FONT_NORMAL)
+        tankLabel:SetColor(1, 1, 1, 1)
         tankLabel:SetMouseEnabled(false)
 
         local attackIcon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
         attackIcon:SetAnchor(LEFT, tankLabel, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackIcon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
         attackIcon:SetMouseEnabled(false)
-        attackIcon:SetAlpha(0)
+        attackIcon:SetHidden(true)
 
         local attackLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
-        attackLabel:SetFont(FONT_NORMAL)
-        attackLabel:SetColor(1, 1, 1, 1)
+        attackLabel:SetAnchor(LEFT, attackIcon, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         attackLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-        attackLabel:SetAnchor(LEFT, attackIcon, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
+        attackLabel:SetFont(FONT_NORMAL)
+        attackLabel:SetColor(1, 1, 1, 1)
         attackLabel:SetMouseEnabled(false)
 
         groupLeft:SetHidden(true)
@@ -180,6 +195,7 @@ local function CreateUI()
             timelineLeft = CreateRowAnimation(groupLeft),
             timelineRight = CreateRowAnimation(groupRight),
             nameLabel = nameLabel,
+            signatureIcons = signatureIcons,
             ddLabel = ddLabel,
             tankLabel = tankLabel,
             attackIcon = attackIcon,
@@ -213,11 +229,28 @@ local function RenderRowContents(row, opponentEntry)
     row.nameLabel:SetFont(rowFont)
     row.nameLabel:SetText(opponent.name or "?")
 
+    local signature = opponent.signature or {}
+    local numSig = 1
+    for _, sitem in pairs(signature) do
+        local icon = row.signatureIcons[numSig]
+        if not icon then
+            break
+        end
+        icon:SetTexture(sitem.abilityIcon)
+        icon:SetHidden(false)
+        numSig = numSig + 1
+    end
+    for i = numSig, #row.signatureIcons do
+        local icon = row.signatureIcons[i]
+        icon:SetTexture(nil)
+        icon:SetHidden(true)
+    end
+
     if (opponent.lastBaseDamage or 0) > 0 then
         row.ddLabel:SetText(string.format("%d ||", opponent.lastBaseDamage))
         row.ddLabel:SetColor(1, 1, 1, 1.0)
     else
-        row.ddLabel:SetText("? ||")
+        row.ddLabel:SetText("0000 ||")
         row.ddLabel:SetColor(1, 1, 1, 0.5)
     end
     if (opponent.lastMitigation or 0) > 0 then
@@ -228,7 +261,7 @@ local function RenderRowContents(row, opponentEntry)
         row.tankLabel:SetText(string.format("%d%%", m))
         row.tankLabel:SetColor(1, 1, 1, 1.0)
     else
-        row.tankLabel:SetText("?%")
+        row.tankLabel:SetText("??%")
         row.tankLabel:SetColor(1, 1, 1, 0.5)
     end
 
@@ -241,7 +274,7 @@ local function RenderRowContents(row, opponentEntry)
 
         local abilityText = attack.abilityName
         local abilityMarkup = abilityText
-        if attack.critical then
+        if attack.isCritical then
             abilityMarkup = "|cFFFF00" .. abilityText .. "|r"
         end
         if abilityText ~= "" then
@@ -250,9 +283,9 @@ local function RenderRowContents(row, opponentEntry)
 
         local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
         local damageMarkup = damageText
-        if attack.blocked then
+        if attack.isBlocked then
             damageMarkup = "|c7F00FF" .. damageText .. "|r"
-        elseif attack.shielded then
+        elseif attack.isShielded then
             damageMarkup = "|c00FF00" .. damageText .. "|r"
         end
 
@@ -261,8 +294,8 @@ local function RenderRowContents(row, opponentEntry)
         end
     end
 
-    row.attackIcon:SetAlpha(1)
     row.attackIcon:SetTexture(attackIcon)
+    row.attackIcon:SetHidden(attackIcon == nil)
 
     row.attackLabel:SetFont(rowFont)
     local attackText = table.concat(attackMarkupParts, "  ")
@@ -276,7 +309,12 @@ end
 
 local function ClearRowUI(row)
     row.nameLabel:SetText("")
+    for _, icon in ipairs(row.signatureIcons) do
+        icon:SetTexture(nil)
+        icon:SetHidden(true)
+    end
     row.attackIcon:SetTexture(nil)
+    row.attackIcon:SetHidden(true)
     row.attackLabel:SetText("")
     row.groupLeft:SetHidden(true)
     row.groupRight:SetHidden(true)
@@ -296,7 +334,7 @@ local function RenderRowUI(index, row)
 
     if row.needsAnchor then
         row.groupLeft:ClearAnchors()
-        row.groupLeft:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.groupRight:ClearAnchors()
         row.groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.needsAnchor = false
