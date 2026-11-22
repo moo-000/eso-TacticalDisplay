@@ -2,13 +2,14 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
+local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
 -- DB tables from base are assigned by Initialize
-local _HIDDEN_ABILITIES
-local _TRACKED_DOT_ABILITIES
-local _SIGNATURE_ABILITIES
+local _HIDDEN_ABILITIES       -- [ability id] = ability name
+local _TRACKED_DOT_ABILITIES  -- [ability id] = ability name
+local _SIGNATURE_ABILITIES    -- [ability id] = {"main" = main ability id, "name" = ability name}
 
 local _debugLog               -- boolean
 local _minDamage              -- skip tracking if lower than this
@@ -170,14 +171,15 @@ local function UpdateOpponentSignature(opponent)
     opponent.signature = signature
 
     if _signatureFilterOff or lastDealtAttack.isSignature then
-        local abilityId = lastDealtAttack.abilityId
-        local sitem = signature[abilityId]
+        local sigDef = _SIGNATURE_ABILITIES[lastDealtAttack.abilityId]
+        local sigAbilityId = sigDef and sigDef.main or lastDealtAttack.abilityId
+        local sitem = signature[sigAbilityId]
         if not sitem then
             sitem = {
                 abilityName = lastDealtAttack.abilityName,
-                abilityIcon = lastDealtAttack.abilityIcon,
+                abilityIcon = _GetAbilityIconCached(sigAbilityId) or lastDealtAttack.abilityIcon,
             }
-            signature[abilityId] = sitem
+            signature[sigAbilityId] = sitem
         end
         sitem.lastUsed = numAttacks
     end
@@ -228,7 +230,7 @@ local function OnIncomingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _HIDDEN_ABILITIES[abilityId] == true then
+        or _HIDDEN_ABILITIES[abilityId] ~= nil then
         return
     end
 
@@ -260,7 +262,7 @@ local function OnIncomingCombatEvent(
         and previousAttack.sessionTimeMs <= sessionTimeMs
         and previousAttack.sessionTimeMs >= sessionTimeMs - 100 then
         previousAttack.abilityId = abilityId
-        previousAttack.abilityIcon = GetAbilityIcon(abilityId) or previousAttack.abilityIcon
+        previousAttack.abilityIcon = _GetAbilityIconCached(abilityId) or previousAttack.abilityIcon
         previousAttack.damage = previousAttack.damage + totalDamage
         previousAttack.isCritical = isCritical
         previousAttack.isBlocked = isBlocked
@@ -270,12 +272,12 @@ local function OnIncomingCombatEvent(
         opponent.lastDealtAttack = {
             abilityId = abilityId,
             abilityName = abilityName,
-            abilityIcon = GetAbilityIcon(abilityId) or nil,
+            abilityIcon = _GetAbilityIconCached(abilityId) or nil,
             damage = totalDamage,
             isCritical = isCritical,
             isBlocked = isBlocked,
             isShielded = shieldedDamage > 0,
-            isSignature = _SIGNATURE_ABILITIES[abilityId],
+            isSignature = _SIGNATURE_ABILITIES[abilityId] ~= nil,
             sessionTimeMs = sessionTimeMs,
         }
         opponent.numAttacks = (opponent.numAttacks or 0) + 1
@@ -328,7 +330,7 @@ local function OnOutgoingCombatEvent(
     if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
         or not targetName or targetName == ""
         or not abilityName or abilityName == ""
-        or _HIDDEN_ABILITIES[abilityId] == true then
+        or _HIDDEN_ABILITIES[abilityId] ~= nil then
         return
     end
 

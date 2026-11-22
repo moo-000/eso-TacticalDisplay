@@ -19,7 +19,7 @@ local _defaults = {
     panelVisibleDuration = 60,
 }
 
-local SAVED_VARS_VERSION = 2
+local SAVED_VARS_VERSION = 3
 
 local function ApplySettings()
     if _config.enabled then

@@ -3,6 +3,7 @@ TacticalDisplay.Base = TacticalDisplay.Base or {}
 local _Base = TacticalDisplay.Base
 local _ClearTable = TacticalDisplay.Utilities.ClearTable
 local _CountTable = TacticalDisplay.Utilities.CountTable
+local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
 
@@ -59,7 +60,7 @@ local HIDDEN_ABILITY_NAMES = {
     ["Unstable Core"] = true,
     ["Volatile Familiar"] = true,
 }
-local _HIDDEN_ABILITIES
+local _HIDDEN_ABILITIES -- [ability id] = ability name
 
 -- DoT abilities to register for combat events explicitly
 -- Because there are very few DoTs to track for now.
@@ -70,62 +71,89 @@ local TRACKED_DOT_ABILITY_NAMES = {
     ["Pyrebrand"] = true,
     ["Thrive in Chaos"] = true,
 }
-local _TRACKED_DOT_ABILITIES
+local _TRACKED_DOT_ABILITIES -- [ability id] = ability name
 
 -- To identify opponents' builds
 local SIGNATURE_ABILITY_NAMES = {
-    ["Ballista"] = true,
-    ["Biting Jabs"] = true,
-    ["Blood for Blood"] = true,
-    ["Bound Armaments"] = true,
-    ["Cephaliarch's Flail"] = true,
-    ["Corpseburster"] = true,
-    ["Corrosive Armor"] = true,
-    ["Crystal Fragments"] = true,
-    ["Crystal Weapon"] = true,
-    ["Daedric Prey"] = true,
-    ["Deadlands Demolisher"] = true,
-    ["Deep Fissure"] = true,
-    ["Dizzying Swing"] = true,
+    -- Class: Arcanist: Herald of the Tome
+    ["The Tide King's Gaze"] = true,
     ["Exhausting Fatecarver"] = true,
-    ["Flame Lash"] = true,
-    ["Focused Aim"] = true,
-    ["Glacial Colossus"] = true,
-    ["Gorethief"] = true,
-    ["Hrothgar's Chill"] = true,
-    ["Ice Comet"] = true,
-    ["Lava Whip"] = true,
-    ["Lethal Arrow"] = true,
-    ["Light Attack (Werewolf)"] = true,
-    ["Maarselok"] = true,
-    ["Merciless Resolve"] = true,
-    ["Molten Whip"] = true,
-    ["Onslaught"] = true,
-    ["Pestilent Colossus"] = true,
-    ["Power Slam"] = true,
     ["Pragmatic Fatecarver"] = true,
-    ["Puncturing Sweep"] = true,
-    ["Pyrebrand"] = true,
-    ["Rend"] = true,
+    ["Cephaliarch's Flail"] = true,
+    ["Tentacular Dread"] = true,
+    -- Class: Dragonknight: Ardent Flame
+    ["Lava Whip"] = true,
+    ["Flame Lash"] = true,
+    ["Molten Whip"] = true,
+    -- Class: Dragonknight: Earthen Heart
+    ["Corrosive Armor"] = true,
+    -- Class: Necromancer: Grave Lord
+    ["Glacial Colossus"] = true,
+    ["Pestilent Colossus"] = true,
+    ["Ricochet Skull"] = true,
+    ["Venom Skull"] = true,
+    -- Class: Nightblade: Assassination
+    ["Concealed Weapon"] = true,
+    ["Surprise Attack"] = true,
+    ["Merciless Resolve"] = true,
     ["Relentless Focus"] = true,
+    -- Class: Sorcerer: Daedric Summoning
+    ["Bound Armaments"] = true,
+    -- Class: Sorcerer: Dark Magic
+    ["Crystal Fragments"] = true,
+    -- Class: Sorcerer: Storm Calling
+    ["Streak"] = true,
+    -- Class: Templar: Aedric Spear
+    ["Aurora Javelin"] = true,
+    ["Binding Javelin"] = true,
+    ["Toppling Charge"] = true,
+    -- Class: Templar: Dawn's Wrath
     ["Radiant Glory"] = true,
     ["Radiant Oppression"] = true,
+    -- Class: Warden: Animal Companions
+    ["Deep Fissure"] = true,
+    ["Subterranean Assault"] = true,
+    -- Weapon: Bow
+    ["Ballista"] = true,
+    ["Toxic Barrage"] = true,
+    ["Focused Aim"] = true,
+    ["Lethal Arrow"] = true,
+    -- Weapon: Dual Wield
+    ["Rend"] = true,
+    ["Thrive in Chaos"] = true,
     ["Rending Slashes"] = true,
+    -- Weapon: One Hand and Shield
+    ["Power Slam"] = true,
     ["Reverberating Bash"] = true,
+    -- Weapon: Two Handed
+    ["Onslaught"] = true,
+    ["Dizzying Swing"] = true,
+    ["Wrecking Blow"] = true,
+    -- World: Vampire
+    ["Blood for Blood"] = true,
+    -- World: Werewolf
+    ["Light Attack (Werewolf)"] = true,
+    -- Guild: Fighters Guild
+    ["Dawnbreaker of Smiting"] = true,
+    ["Flawless Dawnbreaker"] = true,
+    -- Guild: Mages Guild
+    ["Ice Comet"] = true,
+    ["Shooting Star"] = true,
+    -- Proc Sets: 5 pieces
+    ["Corpseburster"] = true,
+    ["Deadlands Demolisher"] = true,
+    ["Gorethief"] = true,
+    ["Hrothgar's Chill"] = true,
+    ["Pyrebrand"] = true,
     ["Scavenging Maw"] = true,
     ["Sliver Assault"] = true,
-    ["Streak"] = true,
-    ["Subterranean Assault"] = true,
-    ["Tentacular Dread"] = true,
-    ["The Tide King's Gaze"] = true,
-    ["Thrive in Chaos"] = true,
-    ["Toxic Barrage"] = true,
-    ["Venom Skull"] = true,
     ["Vicious Death"] = true,
+    -- Proc Sets: Monster sets
+    ["Maarselok"] = true,
+    -- Proc Sets: Arena weapons
     ["Wrath of Elements"] = true,
-    ["Wrecking Blow"] = true,
 }
-local _SIGNATURE_ABILITIES
+local _SIGNATURE_ABILITIES -- [id] = {"main" = main ability id, "name" = ability name}
 
 -- For mitigation measurement, id to player tooltip damage
 local MEASURABLE_PLAYER_ABILITY_NAMES = {
@@ -140,7 +168,7 @@ local MEASURABLE_PLAYER_ABILITY_NAMES = {
     ["Light Attack (Two Handed)"] = true,
     ["Light Attack (Werewolf)"] = true,
 }
-local _MEASURABLE_PLAYER_ABILITIES
+local _MEASURABLE_PLAYER_ABILITIES -- [ability id] = ability name
 
 local DEAD_ICON_PATH = "/esoui/art/icons/ability_mage_065.dds"
 
@@ -149,7 +177,7 @@ local function IsRealAbility(abilityId)
         return false
     end
 
-    local icon = GetAbilityIcon(abilityId) or ""
+    local icon = _GetAbilityIconCached(abilityId) or ""
     if icon == DEAD_ICON_PATH then
         return false
     end
@@ -178,6 +206,21 @@ local function BuildAbilityNameMap()
             numAbilities, _CountTable(nameMap), lastAbilityId, lastAbilityName))
     end
     return nameMap
+end
+
+-- Find the main ability id we can use for showing a signature ability on UI
+-- Need to be usable for tooltips
+local function FindMainAbilityId(abilityIdList)
+    -- Search from the back for the final/proc version, such as Crystal Fragments
+    for index = #abilityIdList, 1, -1 do
+        local abilityId = abilityIdList[index]
+        local descr = GetAbilityDescription(abilityId, nil, "player")
+        -- Reject empty text and templated text such as "... AB_MAGIC_DAMAGE ..."
+        if descr ~= "" and not descr:find(" AB_", 1, true) then
+            return abilityId
+        end
+    end
+    return abilityIdList[1]
 end
 
 local function RebuildAbilityMaps()
@@ -210,8 +253,12 @@ local function RebuildAbilityMaps()
     _ClearTable(_SIGNATURE_ABILITIES)
     for abilityName in pairs(SIGNATURE_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
+        local mainId = FindMainAbilityId(idList)
         for _, abilityId in ipairs(idList) do
-            _SIGNATURE_ABILITIES[abilityId] = abilityName
+            _SIGNATURE_ABILITIES[abilityId] = {
+                ["main"] = mainId,
+                ["name"] = abilityName,
+            }
         end
     end
     if _debugLog then

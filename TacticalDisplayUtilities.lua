@@ -21,6 +21,25 @@ function _Utilities.CountTable(table)
 end
 
 -------------------------------------------------------------------------------
+-- Basics
+-------------------------------------------------------------------------------
+
+local _abilityIconCache = {}
+
+function _Utilities.GetAbilityIconCached(abilityId)
+    if not abilityId or abilityId == 0 then
+        return nil
+    end
+
+    local icon = _abilityIconCache[abilityId]
+    if icon == nil then
+        icon = GetAbilityIcon(abilityId) or false
+        _abilityIconCache[abilityId] = icon
+    end
+    return icon or nil
+end
+
+-------------------------------------------------------------------------------
 -- Logging
 -------------------------------------------------------------------------------
 
