@@ -13,7 +13,7 @@ local _defaults = {
     debugLog = false,
     minDamage = 400,
     signatureFilterOff = false,
-    signatureTTL = 300,
+    signatureTTL = 600,
     panelEnabled = true,
     panelActiveDuration = 2,
     panelVisibleDuration = 60,
@@ -115,7 +115,7 @@ local function CreateSettingsUI()
                     type = "slider",
                     name = "Minimum damage to track",
                     min = 0,
-                    max = 1000,
+                    max = 2000,
                     disabled = function()
                         return not _config.enabled
                     end,
@@ -131,7 +131,7 @@ local function CreateSettingsUI()
                     type = "slider",
                     name = "How long to keep signatures, in received attacks",
                     min = 20,
-                    max = 1000,
+                    max = 2000,
                     disabled = function()
                         return not _config.enabled
                     end,

@@ -2,6 +2,8 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
 local _OnOpponentUpdated = TacticalDisplay.Data.OnOpponentUpdated
+---@diagnostic disable-next-line: undefined-global
+local _AbilityTooltip = AbilityTooltip
 
 local _config
 local _defaults = {
@@ -64,6 +66,18 @@ local function CreateRowAnimation(parent)
     fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 4 * 3)
 
     return timeline
+end
+
+local function SignatureIconOnMouseEnter(self)
+    if not self.abilityId or self.abilityId == 0 then
+        return
+    end
+    InitializeTooltip(_AbilityTooltip, self, BOTTOM, 0, -4)
+    _AbilityTooltip:SetAbilityId(self.abilityId)
+end
+
+local function SignatureIconOnMouseExit()
+    ClearTooltip(_AbilityTooltip)
 end
 
 local function CreateUI()
@@ -148,7 +162,10 @@ local function CreateUI()
                 icon:SetAnchor(TOPLEFT, signatureIcons[i - 1], TOPRIGHT, 1, 0)
             end
             icon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
-            icon:SetMouseEnabled(false)
+            icon:SetDrawLayer(DL_OVERLAY)
+            icon:SetMouseEnabled(true)
+            icon:SetHandler("OnMouseEnter", SignatureIconOnMouseEnter)
+            icon:SetHandler("OnMouseExit", SignatureIconOnMouseExit)
             icon:SetHidden(true)
             signatureIcons[i] = icon
         end
@@ -230,18 +247,27 @@ local function RenderRowContents(row, opponentEntry)
     row.nameLabel:SetText(opponent.name or "?")
 
     local signature = opponent.signature or {}
+    local sigKeys = {}
+    for abilityId in pairs(signature) do
+        sigKeys[#sigKeys + 1] = abilityId
+    end
+    table.sort(sigKeys)
+
     local numSig = 1
-    for _, sitem in pairs(signature) do
+    for _, abilityId in ipairs(sigKeys) do
+        local sitem = signature[abilityId]
         local icon = row.signatureIcons[numSig]
         if not icon then
             break
         end
+        icon.abilityId = abilityId
         icon:SetTexture(sitem.abilityIcon)
         icon:SetHidden(false)
         numSig = numSig + 1
     end
     for i = numSig, #row.signatureIcons do
         local icon = row.signatureIcons[i]
+        icon.abilityId = 0
         icon:SetTexture(nil)
         icon:SetHidden(true)
     end
@@ -310,6 +336,7 @@ end
 local function ClearRowUI(row)
     row.nameLabel:SetText("")
     for _, icon in ipairs(row.signatureIcons) do
+        icon.abilityId = 0
         icon:SetTexture(nil)
         icon:SetHidden(true)
     end

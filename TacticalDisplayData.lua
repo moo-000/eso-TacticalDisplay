@@ -442,7 +442,7 @@ local function RegisterForCombatEvents()
     -- Register for each of tracked DoT abilities as there are very few we need.
     -- Track incoming DoTs only. No reason to track outgoing DoTs yet.
     for _, actionResult in ipairs(DOT_ACTION_RESULTS) do
-        for abilityId, _ in pairs(_TRACKED_DOT_ABILITIES) do
+        for abilityId in pairs(_TRACKED_DOT_ABILITIES) do
             local dotReg = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult) .. "_" .. tostring(abilityId)
             EVENT_MANAGER:RegisterForEvent(dotReg, EVENT_COMBAT_EVENT, OnIncomingCombatEvent)
             if not EVENT_MANAGER:AddFilterForEvent(

@@ -96,6 +96,7 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Ice Comet"] = true,
     ["Lava Whip"] = true,
     ["Lethal Arrow"] = true,
+    ["Light Attack (Werewolf)"] = true,
     ["Maarselok"] = true,
     ["Merciless Resolve"] = true,
     ["Molten Whip"] = true,
@@ -112,6 +113,7 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Rending Slashes"] = true,
     ["Reverberating Bash"] = true,
     ["Scavenging Maw"] = true,
+    ["Sliver Assault"] = true,
     ["Streak"] = true,
     ["Subterranean Assault"] = true,
     ["Tentacular Dread"] = true,
@@ -182,7 +184,7 @@ local function RebuildAbilityMaps()
     local nameToIdList = BuildAbilityNameMap()
 
     _ClearTable(_HIDDEN_ABILITIES)
-    for abilityName, _ in pairs(HIDDEN_ABILITY_NAMES) do
+    for abilityName in pairs(HIDDEN_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
         for _, abilityId in ipairs(idList) do
             _HIDDEN_ABILITIES[abilityId] = abilityName
@@ -194,7 +196,7 @@ local function RebuildAbilityMaps()
     end
 
     _ClearTable(_TRACKED_DOT_ABILITIES)
-    for abilityName, _ in pairs(TRACKED_DOT_ABILITY_NAMES) do
+    for abilityName in pairs(TRACKED_DOT_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
         for _, abilityId in ipairs(idList) do
             _TRACKED_DOT_ABILITIES[abilityId] = abilityName
@@ -206,7 +208,7 @@ local function RebuildAbilityMaps()
     end
 
     _ClearTable(_SIGNATURE_ABILITIES)
-    for abilityName, _ in pairs(SIGNATURE_ABILITY_NAMES) do
+    for abilityName in pairs(SIGNATURE_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
         for _, abilityId in ipairs(idList) do
             _SIGNATURE_ABILITIES[abilityId] = abilityName
@@ -218,7 +220,7 @@ local function RebuildAbilityMaps()
     end
 
     _ClearTable(_MEASURABLE_PLAYER_ABILITIES)
-    for abilityName, _ in pairs(MEASURABLE_PLAYER_ABILITY_NAMES) do
+    for abilityName in pairs(MEASURABLE_PLAYER_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
         for _, abilityId in ipairs(idList) do
             if GetAbilityDescription(abilityId, nil, "player") ~= "" then
@@ -256,8 +258,8 @@ end
 
 local function ResetMeasurablePlayerDamage()
     _ClearTable(_measurablePlayerDamageByAbility)
-    for abl, _ in pairs(_MEASURABLE_PLAYER_ABILITIES) do
-        _measurablePlayerDamageByAbility[abl] = 0
+    for abilityId in pairs(_MEASURABLE_PLAYER_ABILITIES) do
+        _measurablePlayerDamageByAbility[abilityId] = 0
     end
 end
 
