@@ -102,6 +102,8 @@ local SIGNATURE_ABILITY_NAMES = {
     -- Class: Sorcerer: Dark Magic
     ["Crystal Fragments"] = true,
     -- Class: Sorcerer: Storm Calling
+    ["Light Attack (Energy Overload)"] = true,
+    ["Light Attack (Power Overload)"] = true,
     ["Streak"] = true,
     -- Class: Templar: Aedric Spear
     ["Aurora Javelin"] = true,
@@ -140,13 +142,17 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Ice Comet"] = true,
     ["Shooting Star"] = true,
     -- Proc Sets: 5 pieces
+    ["Anthelmir's Construct"] = true,
     ["Corpseburster"] = true,
     ["Deadlands Demolisher"] = true,
+    ["Eagle's Mark"] = true,
     ["Gorethief"] = true,
     ["Hrothgar's Chill"] = true,
+    ["Knight Slayer"] = true,
     ["Pyrebrand"] = true,
     ["Scavenging Maw"] = true,
     ["Sliver Assault"] = true,
+    ["Tarnished Nightmare"] = true,
     ["Vicious Death"] = true,
     -- Proc Sets: Monster sets
     ["Maarselok"] = true,

@@ -160,6 +160,24 @@ local function GetOrCreateOpponent(key)
     return opponent
 end
 
+local MAX_BASE_DAMAGES = 20
+
+local function UpdateOpponentBaseDamage(opponent, damage)
+    local baseDamages = opponent.baseDamages or {}
+    opponent.baseDamages = baseDamages
+
+    if #baseDamages >= MAX_BASE_DAMAGES then
+        table.remove(baseDamages, #baseDamages)
+    end
+    table.insert(baseDamages, 1, damage)
+
+    local total = 0
+    for _, d in ipairs(baseDamages) do
+        total = total + d
+    end
+    opponent.lastBaseDamage = math.floor(total / #baseDamages + 0.5)
+end
+
 local function UpdateOpponentSignature(opponent)
     local lastDealtAttack = opponent.lastDealtAttack
     if not lastDealtAttack then
@@ -284,13 +302,8 @@ local function OnIncomingCombatEvent(
     end
 
     if not isBlocked
-        and not isCritical
-        and shieldedDamage == 0
-        and overflow == 0 then
-        -- record opponent base damage; need normalization later
-        if abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
-            opponent.lastBaseDamage = totalDamage
-        end
+        and abilityActionSlotType == ACTION_SLOT_TYPE_LIGHT_ATTACK then
+        UpdateOpponentBaseDamage(opponent, totalDamage)
     end
 
     UpdateOpponentSignature(opponent)
