@@ -5,6 +5,7 @@ local _Base = TacticalDisplay.Base
 local _Data = TacticalDisplay.Data
 local _Panel = TacticalDisplay.Panel
 local _LibAddonMenu2 = LibAddonMenu2
+local _CountTable = TacticalDisplay.Utilities.CountTable
 
 local _config
 local _defaults = {
@@ -38,6 +39,16 @@ local function ApplySettings()
     end
 end
 
+local function RebuildDBAndApply()
+    _Base.RebuildDB()
+
+    -- apply DoT changes
+    if _config.enabled then
+        _Data.Disable()
+        _Data.Enable()
+    end
+end
+
 local function UpdateParameters()
     _Base.UpdateParameters(_config.debugLog)
     _Data.UpdateParameters(_config.debugLog, _config.minDamage)
@@ -55,6 +66,31 @@ local function CreateSettingsUI()
     })
 
     _LibAddonMenu2:RegisterOptionControls("TacticalDisplayOptions", {
+        {
+            type = "description",
+            name = "Game database",
+            title = "Game database",
+            text = function()
+                local numHiddenAbilities = _CountTable(_Base.HIDDEN_ABILITIES)
+                local numTrackedDoTs = _CountTable(_Base.TRACKED_DOT_ABILITIES)
+                local numSignatureAbilities = _CountTable(_Base.SIGNATURE_ABILITIES)
+                local numMeasurablePlayerAbilities = _CountTable(_Base.MEASURABLE_PLAYER_ABILITIES)
+                if numHiddenAbilities == 0 then
+                    return "Empty database; Click \"Rebuild game database\" below"
+                else
+                    return ("Hidden abilities: %d\nTracked DoTs: %d\nSignature ablities: %d\nMeasurable abilities: %d")
+                        :format(numHiddenAbilities, numTrackedDoTs, numSignatureAbilities, numMeasurablePlayerAbilities)
+                end
+            end,
+            width = "full",
+        },
+        {
+            type = "button",
+            name = "Rebuild game database",
+            func = function()
+                RebuildDBAndApply()
+            end,
+        },
         {
             type = "checkbox",
             name = "Enable Combat Tracking",

@@ -1,13 +1,14 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
-local _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES
-local _PARENTS_OF_ABILITIES = TacticalDisplay.Base.PARENTS_OF_ABILITIES
-local _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
-local _SIGNATURE_ABILITIES = TacticalDisplay.Base.SIGNATURE_ABILITIES
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
+
+-- DB tables from base are assigned by Initialize
+local _HIDDEN_ABILITIES
+local _TRACKED_DOT_ABILITIES
+local _SIGNATURE_ABILITIES
 
 local _debugLog               -- boolean
 local _minDamage              -- skip tracking if lower than this
@@ -252,14 +253,14 @@ local function OnIncomingCombatEvent(
     local opponent = GetOrCreateOpponent(opponentKey)
     opponent.lastSeen = GetTimeStamp()
 
-    local baseAbilityId = _PARENTS_OF_ABILITIES[abilityId] or abilityId
     local previousAttack = opponent.lastDealtAttack
     if previousAttack ~= nil
-        and previousAttack.abilityId == baseAbilityId
+        and previousAttack.abilityName == abilityName
         and previousAttack.sessionTimeMs ~= nil
         and previousAttack.sessionTimeMs <= sessionTimeMs
         and previousAttack.sessionTimeMs >= sessionTimeMs - 100 then
-        previousAttack.abilityIcon = abilityId and GetAbilityIcon(abilityId) or previousAttack.abilityIcon
+        previousAttack.abilityId = abilityId
+        previousAttack.abilityIcon = GetAbilityIcon(abilityId) or previousAttack.abilityIcon
         previousAttack.damage = previousAttack.damage + totalDamage
         previousAttack.isCritical = isCritical
         previousAttack.isBlocked = isBlocked
@@ -267,14 +268,14 @@ local function OnIncomingCombatEvent(
         previousAttack.sessionTimeMs = sessionTimeMs
     else
         opponent.lastDealtAttack = {
-            abilityId = baseAbilityId,
+            abilityId = abilityId,
             abilityName = abilityName,
-            abilityIcon = abilityId and GetAbilityIcon(abilityId) or nil,
+            abilityIcon = GetAbilityIcon(abilityId) or nil,
             damage = totalDamage,
             isCritical = isCritical,
             isBlocked = isBlocked,
             isShielded = shieldedDamage > 0,
-            isSignature = _SIGNATURE_ABILITIES[baseAbilityId],
+            isSignature = _SIGNATURE_ABILITIES[abilityId],
             sessionTimeMs = sessionTimeMs,
         }
         opponent.numAttacks = (opponent.numAttacks or 0) + 1
@@ -357,7 +358,7 @@ local function OnOutgoingCombatEvent(
         and overflow == 0 then
         -- record opponent mitigation; inaccurate if damage lands right after bar-swapping or buf change
         local sourceDamage = _GetMeasurablePlayerDamage(abilityId, abilityName)
-        if sourceDamage > 0 then
+        if sourceDamage or 0 > 0 then
             local mitigation = math.floor((1 - totalDamage / sourceDamage) * 100 + 0.5)
             if mitigation >= 0 then
                 opponent.lastMitigation = mitigation
@@ -488,6 +489,10 @@ function _Data.Initialize(savedVars)
     savedVars.data[serverName].opponentTable = savedVars.data[serverName].opponentTable or {}
 
     _opponentTable = savedVars.data[serverName].opponentTable
+
+    _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
+    _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES
+    _SIGNATURE_ABILITIES = TacticalDisplay.Base.SIGNATURE_ABILITIES
 end
 
 local _enabled = false
