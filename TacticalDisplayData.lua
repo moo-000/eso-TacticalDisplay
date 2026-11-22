@@ -12,6 +12,8 @@ local _SIGNATURE_ABILITIES
 
 local _debugLog               -- boolean
 local _minDamage              -- skip tracking if lower than this
+local _signatureFilterOff     -- true to mark all attacks as signature
+local _signatureTTL           -- how long to keep signature; unit = num of received attacks
 local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
 local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
 _Data.OnOpponentUpdated = _onOpponentUpdated
@@ -40,8 +42,6 @@ local CRITICAL_ACTION_RESULTS = {
     [ACTION_RESULT_CRITICAL_DAMAGE] = true,
     [ACTION_RESULT_DOT_TICK_CRITICAL] = true,
 }
-
-local EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS = 100
 
 -------------------------------------------------------------------------------
 -- Shielded damage events: buffer absorbed damages for pairing later
@@ -169,7 +169,7 @@ local function UpdateOpponentSignature(opponent)
     local signature = opponent.signature or {}
     opponent.signature = signature
 
-    if lastDealtAttack.isSignature then
+    if _signatureFilterOff or lastDealtAttack.isSignature then
         local abilityId = lastDealtAttack.abilityId
         local sitem = signature[abilityId]
         if not sitem then
@@ -182,15 +182,15 @@ local function UpdateOpponentSignature(opponent)
         sitem.lastUsed = numAttacks
     end
 
-    if numAttacks % 20 == 0 then
-        local expiry = numAttacks - EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS
+    if numAttacks % 10 == 0 then
+        local expiry = numAttacks - _signatureTTL
         for abilityId, sitem in pairs(signature) do
             if not sitem.lastUsed or sitem.lastUsed < expiry then
                 signature[abilityId] = nil
                 if _debugLog then
                     _LogDebug(string.format("Expire signature ability from [%s]: %d %s: %d < %d - %d",
                         opponent.name, abilityId, sitem.abilityName,
-                        sitem.lastUsed or 0, numAttacks, EXPIRE_SIGNATURE_AFTER_NUM_ATTACKS))
+                        sitem.lastUsed or 0, numAttacks, _signatureTTL))
                 end
             end
         end
@@ -515,7 +515,9 @@ function _Data.Disable()
     _enabled = false
 end
 
-function _Data.UpdateParameters(debug, minDamage)
+function _Data.UpdateParameters(debug, minDamage, signatureFilterOff, signatureTTL)
     _debugLog = debug
     _minDamage = minDamage
+    _signatureFilterOff = signatureFilterOff
+    _signatureTTL = signatureTTL
 end

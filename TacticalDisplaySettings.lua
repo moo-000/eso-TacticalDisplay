@@ -11,10 +11,12 @@ local _config
 local _defaults = {
     enabled = true,
     debugLog = false,
-    minDamage = 300,
+    minDamage = 400,
+    signatureFilterOff = false,
+    signatureTTL = 300,
     panelEnabled = true,
     panelActiveDuration = 2,
-    panelVisibleDuration = 30,
+    panelVisibleDuration = 60,
 }
 
 local SAVED_VARS_VERSION = 2
@@ -51,7 +53,7 @@ end
 
 local function UpdateParameters()
     _Base.UpdateParameters(_config.debugLog)
-    _Data.UpdateParameters(_config.debugLog, _config.minDamage)
+    _Data.UpdateParameters(_config.debugLog, _config.minDamage, _config.signatureFilterOff, _config.signatureTTL)
     _Panel.UpdateParameters(_config.panelActiveDuration, _config.panelVisibleDuration)
 end
 
@@ -103,31 +105,45 @@ local function CreateSettingsUI()
             end,
         },
         {
-            type = "checkbox",
-            name = "Enable Debug Logging",
-            getFunc = function()
-                return _config.debugLog
-            end,
-            setFunc = function(enabled)
-                _config.debugLog = enabled
-                UpdateParameters()
-            end,
-        },
-        {
-            type = "slider",
-            name = "Minimum damage to track",
-            min = 0,
-            max = 1000,
+            type = "submenu",
+            name = "Combat Details",
             disabled = function()
                 return not _config.enabled
             end,
-            getFunc = function()
-                return _config.minDamage
-            end,
-            setFunc = function(value)
-                _config.minDamage = value
-                UpdateParameters()
-            end,
+            controls = {
+                {
+                    type = "slider",
+                    name = "Minimum damage to track",
+                    min = 0,
+                    max = 1000,
+                    disabled = function()
+                        return not _config.enabled
+                    end,
+                    getFunc = function()
+                        return _config.minDamage
+                    end,
+                    setFunc = function(value)
+                        _config.minDamage = value
+                        UpdateParameters()
+                    end,
+                },
+                {
+                    type = "slider",
+                    name = "How long to keep signatures, in received attacks",
+                    min = 20,
+                    max = 1000,
+                    disabled = function()
+                        return not _config.enabled
+                    end,
+                    getFunc = function()
+                        return _config.signatureTTL
+                    end,
+                    setFunc = function(value)
+                        _config.signatureTTL = value
+                        UpdateParameters()
+                    end,
+                },
+            },
         },
         {
             type = "submenu",
@@ -149,8 +165,8 @@ local function CreateSettingsUI()
                 },
                 {
                     type = "slider",
-                    name = "How long (seconds) to highlight recent opponents",
-                    min = 1,
+                    name = "How long to highlight recent opponents, in seconds",
+                    min = 2,
                     max = 30,
                     disabled = function()
                         return not _config.panelEnabled
@@ -165,7 +181,7 @@ local function CreateSettingsUI()
                 },
                 {
                     type = "slider",
-                    name = "How long (seconds) to keep recent opponents",
+                    name = "How long to keep recent opponents, in seconds",
                     min = 30,
                     max = 600,
                     disabled = function()
@@ -187,6 +203,37 @@ local function CreateSettingsUI()
                     end,
                     func = function()
                         _Panel.ResetLayout()
+                    end,
+                },
+            },
+        },
+        {
+            type = "submenu",
+            name = "Debug Functions",
+            disabled = function()
+                return not _config.enabled
+            end,
+            controls = {
+                {
+                    type = "checkbox",
+                    name = "Enable Logging to Chat",
+                    getFunc = function()
+                        return _config.debugLog
+                    end,
+                    setFunc = function(enabled)
+                        _config.debugLog = enabled
+                        UpdateParameters()
+                    end,
+                },
+                {
+                    type = "checkbox",
+                    name = "Mark all incoming attacks as signature",
+                    getFunc = function()
+                        return _config.signatureFilterOff
+                    end,
+                    setFunc = function(enabled)
+                        _config.signatureFilterOff = enabled
+                        UpdateParameters()
                     end,
                 },
             },
