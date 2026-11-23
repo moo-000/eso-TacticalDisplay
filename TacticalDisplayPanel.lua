@@ -26,8 +26,9 @@ local CONTENT_PADDING = 8
 local MAX_VISIBLE_OPPONENTS = 12
 local OPPONENT_ROW_HEIGHT = 23
 local OPPONENT_SIGNATURE_CAP = 4
-local OPPONENT_DD_LABEL_WIDTH = 50
-local OPPONENT_TANK_LABEL_WIDTH = 40
+local OPPONENT_MAX_NAME_LABEL_WIDTH = 200
+local OPPONENT_DD_LABEL_WIDTH = 44
+local OPPONENT_TANK_LABEL_WIDTH = 25
 local OPPONENT_ATTACK_ICON_MARGIN = 6
 local OPPONENT_ATTACK_ICON_SIZE = 20
 
@@ -67,12 +68,12 @@ local function CreateRowAnimation(parent)
 
     local scaleAnim = timeline:InsertAnimation(ANIMATION_SCALE, parent, 0)
     scaleAnim:SetScaleValues(1.1, 1.0)
-    scaleAnim:SetDuration(100)
+    scaleAnim:SetDuration(300)
     scaleAnim:SetEasingFunction(ZO_EaseOutQuadratic)
 
     local fadeOutAnim = timeline:InsertAnimation(ANIMATION_ALPHA, parent, 0)
-    fadeOutAnim:SetAlphaValues(1, 0.25)
-    fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 4 * 3)
+    fadeOutAnim:SetAlphaValues(1, 0.33)
+    fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 3 * 2)
 
     return timeline
 end
@@ -120,7 +121,7 @@ local function CreateUI()
     local _backdrop = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
     _backdrop:SetAnchorFill(_window)
     _backdrop:SetExcludeFromResizeToFitExtents(true)
-    _backdrop:SetCenterColor(0.0, 0.0, 0.0, 0.4)
+    _backdrop:SetCenterColor(0.3, 0.0, 0.0, 0.3)
 
     _backdrop:SetEdgeColor(1.0, 1.0, 1.0, 0.5)
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
@@ -150,6 +151,7 @@ local function CreateUI()
         nameLabel:SetAnchor(TOPRIGHT, groupLeft, TOPRIGHT, 0, 0)
         nameLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         nameLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        nameLabel:SetDimensionConstraints(0, 0, OPPONENT_MAX_NAME_LABEL_WIDTH, 0)
         nameLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
         nameLabel:SetFont(FONT_NORMAL)
         nameLabel:SetColor(1, 1, 1, 1)
@@ -209,6 +211,7 @@ local function CreateUI()
         attackLabel:SetAnchor(LEFT, attackIcon, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackLabel:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         attackLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
+        attackLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
         attackLabel:SetFont(FONT_NORMAL)
         attackLabel:SetColor(1, 1, 1, 1)
         attackLabel:SetMouseEnabled(false)
@@ -269,10 +272,10 @@ local function RenderRowContents(row, opponentEntry)
     end
 
     if (opponent.lastBaseDamage or 0) > 0 then
-        row.ddLabel:SetText(string.format("%d ||", opponent.lastBaseDamage))
+        row.ddLabel:SetText(string.format("%d||", opponent.lastBaseDamage))
         row.ddLabel:SetColor(1, 1, 1, 1.0)
     else
-        row.ddLabel:SetText("0000 ||")
+        row.ddLabel:SetText("0000||")
         row.ddLabel:SetColor(1, 1, 1, 0.25)
     end
     if (opponent.lastMitigation or 0) > 0 then

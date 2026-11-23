@@ -71,31 +71,6 @@ local function CreateSettingsUI()
 
     _LibAddonMenu2:RegisterOptionControls("TacticalDisplayOptions", {
         {
-            type = "description",
-            name = "Game database",
-            title = "Game database",
-            text = function()
-                local numHiddenAbilities = _CountTable(_Base.HIDDEN_ABILITIES)
-                local numTrackedDoTs = _CountTable(_Base.TRACKED_DOT_ABILITIES)
-                local numSignatureAbilities = _CountTable(_Base.SIGNATURE_ABILITIES)
-                local numMeasurablePlayerAbilities = _CountTable(_Base.MEASURABLE_PLAYER_ABILITIES)
-                if numHiddenAbilities == 0 then
-                    return "Empty database; Click \"Rebuild game database\" below"
-                else
-                    return ("Hidden abilities: %d\nTracked DoTs: %d\nSignature ablities: %d\nMeasurable abilities: %d")
-                        :format(numHiddenAbilities, numTrackedDoTs, numSignatureAbilities, numMeasurablePlayerAbilities)
-                end
-            end,
-            width = "full",
-        },
-        {
-            type = "button",
-            name = "Rebuild game database",
-            func = function()
-                RebuildDBAndApply()
-            end,
-        },
-        {
             type = "checkbox",
             name = "Enable Combat Tracking",
             getFunc = function()
@@ -243,6 +218,28 @@ local function CreateSettingsUI()
                     name = "Inspect opponents",
                     func = function()
                         _Inspector.Show()
+                    end,
+                },
+                {
+                    type = "description",
+                    name = "Game database",
+                    title = "Game database",
+                    text = function()
+                        local numHiddenAbilities = _CountTable(_Base.HIDDEN_ABILITIES)
+                        local numTrackedDoTs = _CountTable(_Base.TRACKED_DOT_ABILITIES)
+                        local numSignatureAbilities = _CountTable(_Base.SIGNATURE_ABILITIES)
+                        local numMeasurablePlayerAbilities = _CountTable(_Base.MEASURABLE_PLAYER_ABILITIES)
+                        return ("Hidden abilities: %d\nTracked DoTs: %d\nSignature ablities: %d\nMeasurable abilities: %d")
+                            :format(numHiddenAbilities, numTrackedDoTs, numSignatureAbilities,
+                                numMeasurablePlayerAbilities)
+                    end,
+                    width = "full",
+                },
+                {
+                    type = "button",
+                    name = "Rebuild game database",
+                    func = function()
+                        RebuildDBAndApply()
                     end,
                 },
             },

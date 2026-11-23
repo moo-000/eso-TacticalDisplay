@@ -378,6 +378,8 @@ function _Base.Initialize(savedVars)
     db.MEASURABLE_PLAYER_ABILITIES = db.MEASURABLE_PLAYER_ABILITIES or {}
     _MEASURABLE_PLAYER_ABILITIES = db.MEASURABLE_PLAYER_ABILITIES
     _Base.MEASURABLE_PLAYER_ABILITIES = db.MEASURABLE_PLAYER_ABILITIES
+
+    RebuildAbilityMaps()
 end
 
 local _enabled = false
