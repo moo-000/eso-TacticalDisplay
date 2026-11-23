@@ -3,9 +3,11 @@ TacticalDisplay.Settings = TacticalDisplay.Settings or {}
 local _Settings = TacticalDisplay.Settings
 local _Base = TacticalDisplay.Base
 local _Data = TacticalDisplay.Data
+local _Inspector = TacticalDisplay.Inspector
 local _Panel = TacticalDisplay.Panel
 local _LibAddonMenu2 = LibAddonMenu2
 local _CountTable = TacticalDisplay.Utilities.CountTable
+local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
 
 local _config
 local _defaults = {
@@ -236,6 +238,13 @@ local function CreateSettingsUI()
                         UpdateParameters()
                     end,
                 },
+                {
+                    type = "button",
+                    name = "Inspect opponents",
+                    func = function()
+                        _Inspector.Show()
+                    end,
+                },
             },
         },
     })
@@ -248,11 +257,7 @@ end
 function _Settings.Initialize(savedVars)
     savedVars.settings = savedVars.settings or _defaults
     _config = savedVars.settings
-    for key, defaultValue in pairs(_defaults) do
-        if _config[key] == nil then
-            _config[key] = defaultValue
-        end
-    end
+    _FillDefaults(_config, _defaults)
 
     CreateSettingsUI()
     ApplySettings()

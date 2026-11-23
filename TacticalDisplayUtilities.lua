@@ -12,12 +12,29 @@ function _Utilities.ClearTable(tbl)
     end
 end
 
-function _Utilities.CountTable(table)
+function _Utilities.CountTable(tbl)
     local count = 0
-    for _ in pairs(table) do
+    for _ in pairs(tbl) do
         count = count + 1
     end
     return count
+end
+
+function _Utilities.FillDefaults(tbl, defaults)
+    for key, value in pairs(defaults) do
+        if tbl[key] == nil then
+            tbl[key] = value
+        end
+    end
+end
+
+function _Utilities.SortedKeys(tbl)
+    local keyTable = {}
+    for key in pairs(tbl) do
+        keyTable[#keyTable + 1] = key
+    end
+    table.sort(keyTable)
+    return keyTable
 end
 
 -------------------------------------------------------------------------------

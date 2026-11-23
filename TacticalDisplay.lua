@@ -15,6 +15,7 @@ local function OnAddonLoaded(_, addonName)
 
     _TacticalDisplay.Base.Initialize(savedVars)
     _TacticalDisplay.Data.Initialize(savedVars)
+    _TacticalDisplay.Inspector.Initialize(savedVars)
     _TacticalDisplay.Panel.Initialize(savedVars)
     _TacticalDisplay.Settings.Initialize(savedVars)
 end

@@ -504,6 +504,7 @@ function _Data.Initialize(savedVars)
     savedVars.data[serverName].opponentTable = savedVars.data[serverName].opponentTable or {}
 
     _opponentTable = savedVars.data[serverName].opponentTable
+    _Data.OpponentTable = _opponentTable
 
     _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
     _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES

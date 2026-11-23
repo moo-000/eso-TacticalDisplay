@@ -2,6 +2,8 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
 local _OnOpponentUpdated = TacticalDisplay.Data.OnOpponentUpdated
+local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
+local _SortedKeys = TacticalDisplay.Utilities.SortedKeys
 ---@diagnostic disable-next-line: undefined-global
 local _AbilityTooltip = AbilityTooltip
 
@@ -14,8 +16,8 @@ local _defaults = {
 local _opponentActiveDuration = 2
 local _opponentVisibleDuration = 30
 
-local FONT_BOLD = "$(BOLD_FONT)|18|soft-shadow-thick"
-local FONT_NORMAL = "$(MEDIUM_FONT)|18|soft-shadow-thick"
+local FONT_BOLD = "EsoUI/Common/Fonts/FTN87.otf|18|soft-shadow-thick"
+local FONT_NORMAL = "EsoUI/Common/Fonts/FTN57.otf|18|soft-shadow-thick"
 
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
@@ -37,6 +39,15 @@ local _window
 local _reserve
 local _contentAreaLeft
 local _contentAreaRight
+
+-- Row UIs are pre-created to MAX_VISIBLE_OPPONENTS;
+-- The top rows in _opponentRows match _visibleOpponentEntries, while the rest
+-- are hidden until new opponents need to be displayed.
+-- Once a row is linked to a visible opponent, the link stays until the
+-- opponent expires - if positions should change, rows in _opponentRows are
+-- merely swapped and their anchors updated.
+-- Expiring a previously-linked row involves moving it to the bottom (both in
+-- the table and on the UI, though hidden).
 local _opponentRows = {}
 
 -------------------------------------------------------------------------------
@@ -44,12 +55,10 @@ local _opponentRows = {}
 -------------------------------------------------------------------------------
 
 local function SaveWindowPosition()
-    if _window and _config then
-        local left, top = _window:GetLeft(), _window:GetTop()
-        if left and top then
-            _config.offsetX = left
-            _config.offsetY = top
-        end
+    local left, top = _window:GetLeft(), _window:GetTop()
+    if left and top then
+        _config.offsetX = left
+        _config.offsetY = top
     end
 end
 
@@ -81,8 +90,8 @@ local function SignatureIconOnMouseExit()
 end
 
 local function CreateUI()
-    _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayWindow")
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _defaults.offsetX, _defaults.offsetY)
+    _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayPanel")
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _config.offsetX, _config.offsetY)
     -- _window:SetDimensions(MIN_WIDTH, CONTENT_PADDING * 2 + MAX_VISIBLE_OPPONENTS * OPPONENT_ROW_HEIGHT)
     _window:SetResizeToFitDescendents(true)
     _window:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
@@ -111,7 +120,7 @@ local function CreateUI()
     local _backdrop = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
     _backdrop:SetAnchorFill(_window)
     _backdrop:SetExcludeFromResizeToFitExtents(true)
-    _backdrop:SetCenterColor(0.4, 0.2, 0, 0.2)
+    _backdrop:SetCenterColor(0.0, 0.0, 0.0, 0.4)
 
     _backdrop:SetEdgeColor(1.0, 1.0, 1.0, 0.5)
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
@@ -228,13 +237,6 @@ local function CreateUI()
     SCENE_MANAGER:GetScene("hudui"):AddFragment(_fragment)
 end
 
-local function ApplyLayout()
-    _window:ClearAnchors()
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT,
-        _config.offsetX or _defaults.offsetX,
-        _config.offsetY or _defaults.offsetY)
-end
-
 -------------------------------------------------------------------------------
 -- Update UI
 -------------------------------------------------------------------------------
@@ -247,14 +249,8 @@ local function RenderRowContents(row, opponentEntry)
     row.nameLabel:SetText(opponent.name or "?")
 
     local signature = opponent.signature or {}
-    local sigKeys = {}
-    for abilityId in pairs(signature) do
-        sigKeys[#sigKeys + 1] = abilityId
-    end
-    table.sort(sigKeys)
-
     local numSig = 1
-    for _, abilityId in ipairs(sigKeys) do
+    for _, abilityId in ipairs(_SortedKeys(signature)) do
         local sitem = signature[abilityId]
         local icon = row.signatureIcons[numSig]
         if not icon then
@@ -277,7 +273,7 @@ local function RenderRowContents(row, opponentEntry)
         row.ddLabel:SetColor(1, 1, 1, 1.0)
     else
         row.ddLabel:SetText("0000 ||")
-        row.ddLabel:SetColor(1, 1, 1, 0.5)
+        row.ddLabel:SetColor(1, 1, 1, 0.25)
     end
     if (opponent.lastMitigation or 0) > 0 then
         local m = opponent.lastMitigation
@@ -288,7 +284,7 @@ local function RenderRowContents(row, opponentEntry)
         row.tankLabel:SetColor(1, 1, 1, 1.0)
     else
         row.tankLabel:SetText("??%")
-        row.tankLabel:SetColor(1, 1, 1, 0.5)
+        row.tankLabel:SetColor(1, 1, 1, 0.25)
     end
 
     local attackIcon = nil
@@ -298,34 +294,31 @@ local function RenderRowContents(row, opponentEntry)
         local attack = opponent.lastDealtAttack
         attackIcon = attack.abilityIcon
 
-        local abilityText = attack.abilityName
-        local abilityMarkup = abilityText
+        local abilityMarkup
         if attack.isCritical then
-            abilityMarkup = "|cFFFF00" .. abilityText .. "|r"
+            abilityMarkup = "|cFFFF00" .. attack.abilityName .. "|r"
+        else
+            abilityMarkup = attack.abilityName
         end
-        if abilityText ~= "" then
-            attackMarkupParts[#attackMarkupParts + 1] = abilityMarkup
-        end
+        attackMarkupParts[#attackMarkupParts + 1] = abilityMarkup
 
-        local damageText = (attack.damage or -1) >= 0 and tostring(attack.damage) or ""
-        local damageMarkup = damageText
+        local damageText = tostring(attack.damage)
+        local damageMarkup
         if attack.isBlocked then
             damageMarkup = "|c7F00FF" .. damageText .. "|r"
         elseif attack.isShielded then
             damageMarkup = "|c00FF00" .. damageText .. "|r"
+        else
+            damageMarkup = damageText
         end
-
-        if damageText ~= "" then
-            attackMarkupParts[#attackMarkupParts + 1] = damageMarkup
-        end
+        attackMarkupParts[#attackMarkupParts + 1] = damageMarkup
     end
 
     row.attackIcon:SetTexture(attackIcon)
     row.attackIcon:SetHidden(attackIcon == nil)
 
     row.attackLabel:SetFont(rowFont)
-    local attackText = table.concat(attackMarkupParts, "  ")
-    row.attackLabel:SetText(attackText)
+    row.attackLabel:SetText(table.concat(attackMarkupParts, "  "))
 
     row.groupLeft:SetHidden(false)
     row.groupRight:SetHidden(false)
@@ -491,9 +484,9 @@ end
 function _Panel.Initialize(savedVars)
     savedVars.panel = savedVars.panel or _defaults
     _config = savedVars.panel
+    _FillDefaults(_config, _defaults)
 
     CreateUI()
-    ApplyLayout()
 end
 
 function _Panel.Enable()
@@ -530,5 +523,6 @@ end
 function _Panel.ResetLayout()
     _config.offsetX = _defaults.offsetX
     _config.offsetY = _defaults.offsetY
-    ApplyLayout()
+    _window:ClearAnchors()
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _config.offsetX, _config.offsetY)
 end
