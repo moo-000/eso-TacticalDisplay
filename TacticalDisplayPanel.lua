@@ -21,16 +21,23 @@ local FONT_NORMAL = "EsoUI/Common/Fonts/FTN57.otf|18|soft-shadow-thick"
 
 local MIN_WIDTH = 240
 local MIN_HEIGHT = 100
-local CONTENT_PADDING = 8
+local CONTENT_PADDING_W = 12
+local CONTENT_PADDING_H = 8
 
 local MAX_VISIBLE_OPPONENTS = 12
 local OPPONENT_ROW_HEIGHT = 23
 local OPPONENT_SIGNATURE_CAP = 4
 local OPPONENT_MAX_NAME_LABEL_WIDTH = 200
-local OPPONENT_DD_LABEL_WIDTH = 44
+local OPPONENT_DD_LABEL_WIDTH = 45
 local OPPONENT_TANK_LABEL_WIDTH = 25
 local OPPONENT_ATTACK_ICON_MARGIN = 6
 local OPPONENT_ATTACK_ICON_SIZE = 20
+
+local ROW_BGCOLOR_DEFAULT = { 0.0, 0.0, 0.0, 0.3 }
+local ROW_BGCOLOR_MAP = {
+    ["Corrosive Armor"] = { 0.2, 0.8, 0.2, 0.3 },
+    ["Onslaught"] = { 0.8, 0.4, 0.0, 0.3 },
+}
 
 local _visibleOpponentEntries = {} -- [index] = { opponent, isActive }
 
@@ -92,13 +99,12 @@ end
 
 local function CreateUI()
     _window = WINDOW_MANAGER:CreateTopLevelWindow("TacticalDisplayPanel")
-    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _config.offsetX, _config.offsetY)
-    -- _window:SetDimensions(MIN_WIDTH, CONTENT_PADDING * 2 + MAX_VISIBLE_OPPONENTS * OPPONENT_ROW_HEIGHT)
     _window:SetResizeToFitDescendents(true)
     _window:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
-    _window:SetResizeToFitPadding(CONTENT_PADDING * 2, CONTENT_PADDING * 2)
+    _window:SetResizeToFitPadding(CONTENT_PADDING_W * 2, CONTENT_PADDING_H * 2)
+    _window:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, _config.offsetX, _config.offsetY)
     _window:SetDrawTier(DT_LOW)
-    _window:SetDrawLayer(DL_OVERLAY)
+    _window:SetDrawLayer(DL_OVERLAY) -- to input, or can't be dragged
     _window:SetClampedToScreen(true)
     _window:SetMouseEnabled(true)
     _window:SetMovable(true)
@@ -106,74 +112,84 @@ local function CreateUI()
     _window:SetHandler("OnMoveStop", SaveWindowPosition)
 
     _reserve = WINDOW_MANAGER:CreateControl(nil, _window, CT_CONTROL)
-    _reserve:SetAnchor(TOPLEFT, _window, TOPLEFT, 0, 0)
     _reserve:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
+    _reserve:SetAnchor(TOPLEFT, _window, TOPLEFT, 0, 0)
     _reserve:SetMouseEnabled(false)
 
     local _reserveTitle = WINDOW_MANAGER:CreateControl(nil, _reserve, CT_LABEL)
+    _reserveTitle:SetAnchor(TOPLEFT, _reserve, TOPLEFT, CONTENT_PADDING_W, CONTENT_PADDING_H)
     _reserveTitle:SetFont(FONT_BOLD)
     _reserveTitle:SetColor(1.0, 0.8, 0, 0.75)
     _reserveTitle:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-    _reserveTitle:SetAnchor(TOPLEFT, _reserve, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
     _reserveTitle:SetText("Tactical Display")
     _reserveTitle:SetHidden(false)
 
     local _backdrop = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
-    _backdrop:SetAnchorFill(_window)
     _backdrop:SetExcludeFromResizeToFitExtents(true)
+    _backdrop:SetAnchorFill(_window)
+    _backdrop:SetDrawLayer(DL_BACKGROUND)
     _backdrop:SetCenterColor(0.3, 0.0, 0.0, 0.3)
-
     _backdrop:SetEdgeColor(1.0, 1.0, 1.0, 0.5)
-    _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", CONTENT_PADDING, CONTENT_PADDING, 2, 0)
+    _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", 8, 8, 2, 0)
     _backdrop:SetMouseEnabled(false)
 
     _contentAreaLeft = WINDOW_MANAGER:CreateControl("TacticalDisplayContentLeft", _window, CT_CONTROL)
-    _contentAreaLeft:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING, CONTENT_PADDING)
     _contentAreaLeft:SetResizeToFitDescendents(true)
     _contentAreaLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
+    _contentAreaLeft:SetAnchor(TOPLEFT, _window, TOPLEFT, CONTENT_PADDING_W, CONTENT_PADDING_H)
     _contentAreaLeft:SetMouseEnabled(false)
 
     _contentAreaRight = WINDOW_MANAGER:CreateControl("TacticalDisplayContentRight", _window, CT_CONTROL)
-    _contentAreaRight:SetAnchor(TOPLEFT, _contentAreaLeft, TOPRIGHT, CONTENT_PADDING, 0)
     _contentAreaRight:SetResizeToFitDescendents(true)
     _contentAreaRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_XY)
+    _contentAreaRight:SetAnchor(TOPLEFT, _contentAreaLeft, TOPRIGHT, CONTENT_PADDING_W / 2, 0)
     _contentAreaRight:SetMouseEnabled(false)
 
     for index = 1, MAX_VISIBLE_OPPONENTS do
         local groupLeft = WINDOW_MANAGER:CreateControl(nil, _contentAreaLeft, CT_CONTROL)
-        groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, 0)
         groupLeft:SetDimensions(0, OPPONENT_ROW_HEIGHT)
         groupLeft:SetResizeToFitDescendents(true)
         groupLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
+        groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, 0)
         groupLeft:SetMouseEnabled(false)
 
         local nameLabel = WINDOW_MANAGER:CreateControl(nil, groupLeft, CT_LABEL)
+        nameLabel:SetDimensionConstraints(0, 0, OPPONENT_MAX_NAME_LABEL_WIDTH, 0)
         nameLabel:SetAnchor(TOPRIGHT, groupLeft, TOPRIGHT, 0, 0)
         nameLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         nameLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
-        nameLabel:SetDimensionConstraints(0, 0, OPPONENT_MAX_NAME_LABEL_WIDTH, 0)
         nameLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
         nameLabel:SetFont(FONT_NORMAL)
         nameLabel:SetColor(1, 1, 1, 1)
         nameLabel:SetMouseEnabled(false)
 
         local groupRight = WINDOW_MANAGER:CreateControl(nil, _contentAreaRight, CT_CONTROL)
-        groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, 0)
         groupRight:SetDimensions(0, OPPONENT_ROW_HEIGHT)
         groupRight:SetResizeToFitDescendents(true)
         groupRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
+        groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, 0)
         groupRight:SetMouseEnabled(false)
 
+        local rowBg = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
+        rowBg:SetDimensions(0, OPPONENT_ROW_HEIGHT)
+        rowBg:SetExcludeFromResizeToFitExtents(true)
+        rowBg:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, 0)
+        rowBg:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, 0)
+        rowBg:SetDrawLayer(DL_BACKGROUND)
+        rowBg:SetCenterColor(unpack(ROW_BGCOLOR_DEFAULT))
+        rowBg:SetEdgeColor(0.0, 0.0, 0.0, 0.0)
+
         local signatureIcons = {}
+        local iconMargin = (OPPONENT_ROW_HEIGHT - OPPONENT_ATTACK_ICON_SIZE) / 2
         for i = 1, OPPONENT_SIGNATURE_CAP do
             local icon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
-            if i == 1 then
-                icon:SetAnchor(TOPLEFT, groupRight, TOPLEFT, 0, 0)
-            else
-                icon:SetAnchor(TOPLEFT, signatureIcons[i - 1], TOPRIGHT, 1, 0)
-            end
             icon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
-            icon:SetDrawLayer(DL_OVERLAY)
+            if i == 1 then
+                icon:SetAnchor(TOPLEFT, groupRight, TOPLEFT, iconMargin, iconMargin)
+            else
+                icon:SetAnchor(TOPLEFT, signatureIcons[i - 1], TOPRIGHT, iconMargin, 0)
+            end
+            icon:SetDrawLayer(DL_OVERLAY) -- to receive input before _window, or tooltip cannot show
             icon:SetMouseEnabled(true)
             icon:SetHandler("OnMouseEnter", SignatureIconOnMouseEnter)
             icon:SetHandler("OnMouseExit", SignatureIconOnMouseExit)
@@ -182,8 +198,8 @@ local function CreateUI()
         end
 
         local ddLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
-        ddLabel:SetAnchor(TOPLEFT, signatureIcons[OPPONENT_SIGNATURE_CAP], TOPRIGHT, 0, 0)
         ddLabel:SetDimensions(OPPONENT_DD_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        ddLabel:SetAnchor(TOPLEFT, signatureIcons[OPPONENT_SIGNATURE_CAP], TOPRIGHT, 0, 0)
         ddLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         ddLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         ddLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
@@ -192,8 +208,8 @@ local function CreateUI()
         ddLabel:SetMouseEnabled(false)
 
         local tankLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
-        tankLabel:SetAnchor(LEFT, ddLabel, RIGHT, 0, 0)
         tankLabel:SetDimensions(OPPONENT_TANK_LABEL_WIDTH, OPPONENT_ROW_HEIGHT)
+        tankLabel:SetAnchor(LEFT, ddLabel, RIGHT, 0, 0)
         tankLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
         tankLabel:SetVerticalAlignment(TEXT_ALIGN_CENTER)
         tankLabel:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
@@ -202,8 +218,8 @@ local function CreateUI()
         tankLabel:SetMouseEnabled(false)
 
         local attackIcon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
-        attackIcon:SetAnchor(LEFT, tankLabel, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackIcon:SetDimensions(OPPONENT_ATTACK_ICON_SIZE, OPPONENT_ATTACK_ICON_SIZE)
+        attackIcon:SetAnchor(LEFT, tankLabel, RIGHT, OPPONENT_ATTACK_ICON_MARGIN, 0)
         attackIcon:SetMouseEnabled(false)
         attackIcon:SetHidden(true)
 
@@ -218,9 +234,12 @@ local function CreateUI()
 
         groupLeft:SetHidden(true)
         groupRight:SetHidden(true)
+        rowBg:SetHidden(true)
+
         _opponentRows[index] = {
             groupLeft = groupLeft,
             groupRight = groupRight,
+            background = rowBg,
             timelineLeft = CreateRowAnimation(groupLeft),
             timelineRight = CreateRowAnimation(groupRight),
             nameLabel = nameLabel,
@@ -325,6 +344,7 @@ local function RenderRowContents(row, opponentEntry)
 
     row.groupLeft:SetHidden(false)
     row.groupRight:SetHidden(false)
+    row.background:SetHidden(false)
     row.timelineLeft:PlayFromStart()
     row.timelineRight:PlayFromStart()
 end
@@ -341,6 +361,7 @@ local function ClearRowUI(row)
     row.attackLabel:SetText("")
     row.groupLeft:SetHidden(true)
     row.groupRight:SetHidden(true)
+    row.background:SetHidden(true)
     row.timelineLeft:Stop()
     row.timelineRight:Stop()
 end
@@ -360,6 +381,9 @@ local function RenderRowUI(index, row)
         row.groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.groupRight:ClearAnchors()
         row.groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.background:ClearAnchors()
+        row.background:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.background:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.needsAnchor = false
     end
     if row.needsRender then
