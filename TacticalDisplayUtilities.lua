@@ -69,9 +69,9 @@ end
 -------------------------------------------------------------------------------
 
 function _Utilities.LogDebug(message)
-    d("[TacticalDisplay] |cCCCCCC" .. message .. "|r")
+    d("[TacticalDisplay] |cCCCCCC" .. string.format(" %d: ", GetGameTimeMilliseconds()) .. message .. "|r")
 end
 
 function _Utilities.LogError(message)
-    d("[TacticalDisplay] |cFF3030" .. message .. "|r")
+    d("[TacticalDisplay] |cFF3030" .. string.format(" %d: ", GetGameTimeMilliseconds()) .. message .. "|r")
 end

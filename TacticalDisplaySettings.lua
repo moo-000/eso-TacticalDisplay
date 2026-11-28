@@ -258,6 +258,6 @@ function _Settings.Initialize(savedVars)
     _FillDefaults(_config, _defaults)
 
     CreateSettingsUI()
-    ApplySettings()
     UpdateParameters()
+    ApplySettings()
 end

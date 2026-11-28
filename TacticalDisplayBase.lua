@@ -159,6 +159,9 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Maarselok"] = { ["procRate"] = 1.0 / 6, ["maxProcs"] = 1 }, -- DoTs last 4s, so 6s from the end to the next one.
     -- Proc Sets: Arena weapons
     ["Wrath of Elements"] = true,
+    -- PvE Tests
+    -- In Bangkorai: Bandit Leader
+    ["Shock Aura"] = { ["procRate"] = 0.1, ["maxProcs"] = 1 }
 }
 local _SIGNATURE_ABILITIES -- [id] = {"main" = main ability id, "name" = ability name}
 local _SIGNATURE_BUFFS     -- [main id] = {"name", "duration"}
@@ -284,6 +287,8 @@ local function RebuildAbilityMaps()
     if _debugLog then
         _LogDebug(string.format("rebuilt signature ability map: %d",
             _CountTable(_SIGNATURE_ABILITIES)))
+        _LogDebug(string.format("rebuilt signature ability buff map: %d",
+            _CountTable(_SIGNATURE_BUFFS)))
         _LogDebug(string.format("rebuilt signature ability proc map: %d",
             _CountTable(_SIGNATURE_PROCS)))
     end

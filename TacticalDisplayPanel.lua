@@ -3,6 +3,7 @@ TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
 local _DoOpponentTimeTick = TacticalDisplay.Data.DoOpponentTimeTick
 local _OnOpponentUpdated = TacticalDisplay.Data.OnOpponentUpdated
+local _ResetOpponentProcs = TacticalDisplay.Data.ResetOpponentProcs
 local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
 local _SortedKeys = TacticalDisplay.Utilities.SortedKeys
 ---@diagnostic disable-next-line: undefined-global
@@ -194,6 +195,8 @@ local function CreateUI()
         highlight.tdAnimation = highlight.tdTimeline:InsertAnimation(ANIMATION_ALPHA, highlight, 0)
 
         local signatureIcons = {}
+        local signatureAuras = {}
+        local signatureBadges = {}
         local iconMargin = (OPPONENT_ROW_HEIGHT - OPPONENT_ATTACK_ICON_SIZE) / 2
         for i = 1, OPPONENT_SIGNATURE_CAP do
             local icon = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_TEXTURE)
@@ -209,6 +212,27 @@ local function CreateUI()
             icon:SetHandler("OnMouseExit", SignatureIconOnMouseExit)
             icon:SetHidden(true)
             signatureIcons[i] = icon
+
+            local aura = WINDOW_MANAGER:CreateControl(nil, icon, CT_TEXTURE)
+            aura:SetAnchor(TOPLEFT, icon, TOPLEFT, -2, -2)
+            aura:SetAnchor(BOTTOMRIGHT, icon, BOTTOMRIGHT, 2, 2)
+            aura:SetDrawLayer(DL_OVERLAY)
+            aura:SetTexture("EsoUI/Art/ActionBar/abilityHighlight_mage_med.dds")
+            aura:SetTextureCoords(0, 1.0 / 64, 0, 1)
+            aura:SetBlendMode(TEX_BLEND_MODE_ADD)
+            aura:SetColor(1.0, 0.6, 0.0, 0.8)
+            signatureAuras[i] = aura
+
+            local badge = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
+            badge:SetAnchor(BOTTOMRIGHT, icon, BOTTOMRIGHT, -1, 2)
+            badge:SetDrawLayer(DL_OVERLAY)
+            badge:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+            badge:SetVerticalAlignment(TEXT_ALIGN_BOTTOM)
+            badge:SetWrapMode(TEXT_WRAP_MODE_TRUNCATE)
+            badge:SetFont(FONT_BOLD)
+            badge:SetColor(1, 1, 0, 1)
+            badge:SetMouseEnabled(false)
+            signatureBadges[i] = badge
         end
 
         local ddLabel = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
@@ -256,6 +280,8 @@ local function CreateUI()
             highlight = highlight,
             nameLabel = nameLabel,
             signatureIcons = signatureIcons,
+            signatureAuras = signatureAuras,
+            signatureBadges = signatureBadges,
             ddLabel = ddLabel,
             tankLabel = tankLabel,
             attackIcon = attackIcon,
@@ -294,13 +320,30 @@ local function RenderRowContents(row, opponentEntry)
         icon.abilityId = abilityId
         icon:SetTexture(sitem.abilityIcon)
         icon:SetHidden(false)
+
+        local aura = row.signatureAuras[numSig]
+        local badge = row.signatureBadges[numSig]
+        local proc = opponent.procs[sitem.abilityName]
+        if proc then
+            local n = zo_floor(proc.numProc)
+            badge:SetText(tostring(n))
+            badge:SetHidden(false)
+            aura:SetHidden(n == 0)
+        else
+            badge:SetText("")
+            badge:SetHidden(true)
+            aura:SetHidden(true)
+        end
         numSig = numSig + 1
     end
+
     for i = numSig, #row.signatureIcons do
         local icon = row.signatureIcons[i]
         icon.abilityId = 0
         icon:SetTexture(nil)
         icon:SetHidden(true)
+        row.signatureAuras[i]:SetHidden(true)
+        row.signatureBadges[i]:SetHidden(true)
     end
 
     if (opponent.lastBaseDamage or 0) > 0 then
@@ -386,10 +429,12 @@ local function ClearRowUI(row)
     row.needsNotice = false
 
     row.nameLabel:SetText("")
-    for _, icon in ipairs(row.signatureIcons) do
+    for i, icon in ipairs(row.signatureIcons) do
         icon.abilityId = 0
         icon:SetTexture(nil)
         icon:SetHidden(true)
+        row.signatureAuras[i]:SetHidden(true)
+        row.signatureBadges[i]:SetHidden(true)
     end
     row.attackIcon:SetTexture(nil)
     row.attackIcon:SetHidden(true)
@@ -497,6 +542,7 @@ local function AddOrUpdateVisibleOpponent(opponent)
         end
     end
 
+    _ResetOpponentProcs(opponent)
     InsertVisibleOpponentAtTop(opponent)
 end
 
@@ -505,7 +551,7 @@ end
 -------------------------------------------------------------------------------
 
 local UPDATE_CLEANUP_NAME = "TacticalDisplay_Panel_Cleanup"
-local UPDATE_CLEANUP_INTERVAL_MS = 1000
+local UPDATE_CLEANUP_INTERVAL_MS = 250
 
 local function CleanupOpponentEntries()
     local now = GetTimeStamp()

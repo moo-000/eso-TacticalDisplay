@@ -2,8 +2,6 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
-local _CopyTable = TacticalDisplay.Utilities.CopyTable
-local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
 local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
@@ -209,7 +207,7 @@ local function RecordOpponentBuff(opponent, buffDef)
     if ongoingBuff.activeEndMs == nil
         or ongoingBuff.activeEndMs < buffTimeMs then
         ongoingBuff.activeStartMs = buffTimeMs
-        ongoingBuff.activeEndMs = buffTimeMs + buffDef.duration
+        ongoingBuff.activeEndMs = buffTimeMs + buffDef.duration * 1000
         if _debugLog then
             _LogDebug(string.format("add buff %s on %s at %d", buffDef.name, opponent.name, buffTimeMs))
         end
@@ -243,6 +241,20 @@ local function RecordOpponentProc(opponent, procDef)
     end
 end
 
+local function ResetOpponentProcs(opponent)
+    local nowMs = GetGameTimeMilliseconds()
+    for sigAbilityId, sitem in pairs(opponent.signature) do
+        local procDef = _SIGNATURE_PROCS[sigAbilityId]
+        if procDef then
+            opponent.procs[sitem.abilityName] = {
+                def = procDef,
+                numProc = procDef.maxProcs,
+                updatedMs = nowMs,
+            }
+        end
+    end
+end
+
 local function DoOpponentTimeTick(opponent, timeMs)
     local changed = false
     for name, buff in pairs(opponent.buffs) do
@@ -256,7 +268,7 @@ local function DoOpponentTimeTick(opponent, timeMs)
     end
     for name, proc in pairs(opponent.procs) do
         local nextNumProc = GetCurrentNumProc(proc.def, proc, timeMs)
-        if zo_floor(nextNumProc) ~= proc.numProc then
+        if zo_floor(nextNumProc) ~= zo_floor(proc.numProc) then
             changed = true
             if _debugLog then
                 _LogDebug(string.format("proc %s filling on %s at %d, next %d",
@@ -532,12 +544,12 @@ local function RegisterForCombatEvents()
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", inReg))
             end
-            if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
-                    inReg, EVENT_COMBAT_EVENT,
-                    REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
-                ) then
-                _LogError(string.format("Failed to apply player filter for %s", inReg))
-            end
+            -- if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
+            --         inReg, EVENT_COMBAT_EVENT,
+            --         REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+            --     ) then
+            --     _LogError(string.format("Failed to apply player filter for %s", inReg))
+            -- end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = inReg
         end
 
@@ -554,12 +566,12 @@ local function RegisterForCombatEvents()
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", outReg))
             end
-            if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
-                    outReg, EVENT_COMBAT_EVENT,
-                    REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
-                ) then
-                _LogError(string.format("Failed to apply player filter for %s", outReg))
-            end
+            -- if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
+            --         outReg, EVENT_COMBAT_EVENT,
+            --         REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+            --     ) then
+            --     _LogError(string.format("Failed to apply player filter for %s", outReg))
+            -- end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = outReg
         end
     end
@@ -609,6 +621,7 @@ end
 
 _Data.DoOpponentTimeTick = DoOpponentTimeTick
 _Data.OnOpponentUpdated = _onOpponentUpdated
+_Data.ResetOpponentProcs = ResetOpponentProcs
 
 function _Data.Initialize(savedVars)
     local serverName = GetWorldName()
@@ -617,9 +630,6 @@ function _Data.Initialize(savedVars)
     savedVars.data[serverName].opponentTable = savedVars.data[serverName].opponentTable or {}
 
     _opponentTable = savedVars.data[serverName].opponentTable
-    for _, opponent in pairs(_opponentTable) do
-        ResetOpponentSession(opponent)
-    end
     _Data.OpponentTable = _opponentTable
 
     _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
@@ -627,6 +637,10 @@ function _Data.Initialize(savedVars)
     _SIGNATURE_ABILITIES = TacticalDisplay.Base.SIGNATURE_ABILITIES
     _SIGNATURE_BUFFS = TacticalDisplay.Base.SIGNATURE_BUFFS
     _SIGNATURE_PROCS = TacticalDisplay.Base.SIGNATURE_PROCS
+
+    for _, opponent in pairs(_opponentTable) do
+        ResetOpponentSession(opponent)
+    end
 end
 
 local _enabled = false
