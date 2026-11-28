@@ -2,6 +2,7 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
+local _InvokeCallbackList = TacticalDisplay.Utilities.InvokeCallbackList
 local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
@@ -18,7 +19,7 @@ local _minDamage              -- skip tracking if lower than this
 local _testMode               -- include monsters and mark all their attacks as signature
 local _signatureTTL           -- how long to keep signature; unit = num of received attacks
 local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
-local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
+local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent, activate or deactivate)
 
 local SHIELD_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE_SHIELDED,
@@ -29,6 +30,12 @@ local DAMAGE_ACTION_RESULTS = {
     ACTION_RESULT_CRITICAL_DAMAGE,
     -- ACTION_RESULT_REFLECTED_DAMAGE, -- FIXME: how to handle this??
     ACTION_RESULT_BLOCKED_DAMAGE,
+}
+
+local KILLING_ACTION_RESULTS = {
+    ACTION_RESULT_KILLING_BLOW,
+    ACTION_RESULT_DIED,
+    ACTION_RESULT_DIED_XP,
 }
 
 local DOT_ACTION_RESULTS = {
@@ -141,6 +148,7 @@ local function GetOrCreateOpponent(key)
         opponent = {
             name = key,
             lastSeen = 0,
+            lastDied = 0,
             lastDealtAttack = nil,
             -- {
             --     abilityId = 123,
@@ -241,6 +249,7 @@ local function RecordOpponentProc(opponent, procDef)
     end
 end
 
+-- Reset is called from UI when opponent is first sighted after a long time
 local function ResetOpponentProcs(opponent)
     local nowMs = GetGameTimeMilliseconds()
     for sigAbilityId, sitem in pairs(opponent.signature) do
@@ -325,14 +334,6 @@ local function UpdateOpponentSignature(opponent, isMonster)
                         sitem.lastUsed or 0, numAttacks, _signatureTTL))
                 end
             end
-        end
-    end
-end
-
-local function InvokeOnOpponentUpdated(opponent)
-    for _, callback in pairs(_onOpponentUpdated) do
-        if callback then
-            callback(opponent)
         end
     end
 end
@@ -429,7 +430,7 @@ local function OnIncomingCombatEvent(
             result, sourceUnitId, targetUnitId))
     end
 
-    InvokeOnOpponentUpdated(opponent)
+    _InvokeCallbackList(_onOpponentUpdated, opponent, true)
 end
 
 local function OnOutgoingCombatEvent(
@@ -507,7 +508,46 @@ local function OnOutgoingCombatEvent(
             result, sourceUnitId, targetUnitId))
     end
 
-    InvokeOnOpponentUpdated(opponent)
+    _InvokeCallbackList(_onOpponentUpdated, opponent, true)
+end
+
+local function OnOutgoingKillingEvent(
+    eventCode,
+    result,
+    isError,
+    abilityName,
+    abilityGraphic,
+    abilityActionSlotType,
+    sourceName,
+    sourceType,
+    targetName,
+    targetType,
+    hitValue,
+    powerType,
+    damageType,
+    log,
+    sourceUnitId,
+    targetUnitId,
+    abilityId,
+    overflow
+)
+    if (targetType == COMBAT_UNIT_TYPE_PLAYER and sourceType == COMBAT_UNIT_TYPE_PLAYER)
+        or not targetName or targetName == ""
+        or not abilityName or abilityName == "" then
+        return
+    end
+
+    local opponentKey = zo_strformat(SI_UNIT_NAME, targetName)
+    local opponent = GetOrCreateOpponent(opponentKey)
+    opponent.lastDied = GetTimeStamp()
+    opponent.buffs = {}
+    opponent.procs = {}
+
+    if _debugLog then
+        _LogDebug(string.format("Killed [%s]: %d %s", opponentKey, abilityId, abilityName))
+    end
+
+    _InvokeCallbackList(_onOpponentUpdated, opponent, false)
 end
 
 -------------------------------------------------------------------------------
@@ -527,6 +567,9 @@ local function RegisterForCombatEvents()
     for _, actionResult in ipairs(DAMAGE_ACTION_RESULTS) do
         handlers[actionResult] = { OnIncomingCombatEvent, OnOutgoingCombatEvent }
     end
+    for _, actionResult in ipairs(KILLING_ACTION_RESULTS) do
+        handlers[actionResult] = { nil, OnOutgoingKillingEvent }
+    end
 
     for actionResult, callbackPair in pairs(handlers) do
         local onIncoming, onOutgoing = unpack(callbackPair)
@@ -544,12 +587,14 @@ local function RegisterForCombatEvents()
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", inReg))
             end
-            -- if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
-            --         inReg, EVENT_COMBAT_EVENT,
-            --         REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
-            --     ) then
-            --     _LogError(string.format("Failed to apply player filter for %s", inReg))
-            -- end
+            if not _testMode then
+                if not EVENT_MANAGER:AddFilterForEvent(
+                        inReg, EVENT_COMBAT_EVENT,
+                        REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+                    ) then
+                    _LogError(string.format("Failed to apply player filter for %s", inReg))
+                end
+            end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = inReg
         end
 
@@ -566,12 +611,14 @@ local function RegisterForCombatEvents()
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", outReg))
             end
-            -- if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
-            --         outReg, EVENT_COMBAT_EVENT,
-            --         REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
-            --     ) then
-            --     _LogError(string.format("Failed to apply player filter for %s", outReg))
-            -- end
+            if not _testMode then
+                if not EVENT_MANAGER:AddFilterForEvent(
+                        outReg, EVENT_COMBAT_EVENT,
+                        REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+                    ) then
+                    _LogError(string.format("Failed to apply player filter for %s", outReg))
+                end
+            end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = outReg
         end
     end

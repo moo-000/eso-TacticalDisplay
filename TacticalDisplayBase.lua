@@ -159,9 +159,13 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Maarselok"] = { ["procRate"] = 1.0 / 6, ["maxProcs"] = 1 }, -- DoTs last 4s, so 6s from the end to the next one.
     -- Proc Sets: Arena weapons
     ["Wrath of Elements"] = true,
-    -- PvE Tests
+    -------------------------------------------------------
+    -- PvE Tests ------------------------------------------
+    -------------------------------------------------------
     -- In Bangkorai: Bandit Leader
-    ["Shock Aura"] = { ["procRate"] = 0.1, ["maxProcs"] = 1 }
+    ["Shock Aura"] = { ["procRate"] = 0.1, ["maxProcs"] = 1 },
+    -- In Bangkorai: Werewolf
+    ["Crushing Leap"] = { ["procRate"] = 1.0 / 12, ["maxProcs"] = 1 },
 }
 local _SIGNATURE_ABILITIES -- [id] = {"main" = main ability id, "name" = ability name}
 local _SIGNATURE_BUFFS     -- [main id] = {"name", "duration"}

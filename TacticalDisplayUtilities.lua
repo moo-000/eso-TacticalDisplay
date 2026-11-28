@@ -46,7 +46,19 @@ function _Utilities.SortedKeys(tbl)
 end
 
 -------------------------------------------------------------------------------
--- Basics
+-- Callbacks
+-------------------------------------------------------------------------------
+
+function _Utilities.InvokeCallbackList(callbackList, ...)
+    for _, callback in pairs(callbackList) do
+        if callback then
+            callback(...)
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- ESO
 -------------------------------------------------------------------------------
 
 local _abilityIconCache = {}

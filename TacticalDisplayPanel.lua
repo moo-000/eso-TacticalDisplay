@@ -218,9 +218,13 @@ local function CreateUI()
             aura:SetAnchor(BOTTOMRIGHT, icon, BOTTOMRIGHT, 2, 2)
             aura:SetDrawLayer(DL_OVERLAY)
             aura:SetTexture("EsoUI/Art/ActionBar/abilityHighlight_mage_med.dds")
-            aura:SetTextureCoords(0, 1.0 / 64, 0, 1)
             aura:SetBlendMode(TEX_BLEND_MODE_ADD)
             aura:SetColor(1.0, 0.6, 0.0, 0.8)
+            aura.tdTimeline = ANIMATION_MANAGER:CreateTimeline()
+            local anim = aura.tdTimeline:InsertAnimation(ANIMATION_TEXTURE, aura)
+            anim:SetImageData(64, 1)
+            anim:SetFramerate(16)
+            aura.tdTimeline:SetPlaybackType(ANIMATION_PLAYBACK_LOOP, LOOP_INDEFINITELY)
             signatureAuras[i] = aura
 
             local badge = WINDOW_MANAGER:CreateControl(nil, groupRight, CT_LABEL)
@@ -301,6 +305,18 @@ end
 -- Update UI
 -------------------------------------------------------------------------------
 
+local function ClearRowSignature(row, index)
+    local icon = row.signatureIcons[index]
+    icon.abilityId = 0
+    icon:SetTexture(nil)
+    icon:SetHidden(true)
+    local aura = row.signatureAuras[index]
+    aura:SetHidden(true)
+    aura.tdTimeline:Stop()
+    local badge = row.signatureBadges[index]
+    badge:SetHidden(true)
+end
+
 local function RenderRowContents(row, opponentEntry)
     local timeMs = GetGameTimeMilliseconds()
     local opponent = opponentEntry.opponent
@@ -315,35 +331,42 @@ local function RenderRowContents(row, opponentEntry)
         local sitem = signature[abilityId]
         local icon = row.signatureIcons[numSig]
         if not icon then
+            -- currently limited to pre-allocated N icons
             break
         end
         icon.abilityId = abilityId
         icon:SetTexture(sitem.abilityIcon)
         icon:SetHidden(false)
 
-        local aura = row.signatureAuras[numSig]
-        local badge = row.signatureBadges[numSig]
         local proc = opponent.procs[sitem.abilityName]
+        local badge = row.signatureBadges[numSig]
+        local animate = false
         if proc then
             local n = zo_floor(proc.numProc)
             badge:SetText(tostring(n))
             badge:SetHidden(false)
-            aura:SetHidden(n == 0)
+            animate = n > 0
         else
             badge:SetText("")
             badge:SetHidden(true)
-            aura:SetHidden(true)
         end
+
+        local aura = row.signatureAuras[numSig]
+        if animate then
+            aura:SetHidden(false)
+            if not aura.tdTimeline:IsPlaying() then
+                aura.tdTimeline:PlayFromStart()
+            end
+        else
+            aura:SetHidden(true)
+            aura.tdTimeline:Stop()
+        end
+
         numSig = numSig + 1
     end
 
     for i = numSig, #row.signatureIcons do
-        local icon = row.signatureIcons[i]
-        icon.abilityId = 0
-        icon:SetTexture(nil)
-        icon:SetHidden(true)
-        row.signatureAuras[i]:SetHidden(true)
-        row.signatureBadges[i]:SetHidden(true)
+        ClearRowSignature(row, i)
     end
 
     if (opponent.lastBaseDamage or 0) > 0 then
@@ -429,12 +452,8 @@ local function ClearRowUI(row)
     row.needsNotice = false
 
     row.nameLabel:SetText("")
-    for i, icon in ipairs(row.signatureIcons) do
-        icon.abilityId = 0
-        icon:SetTexture(nil)
-        icon:SetHidden(true)
-        row.signatureAuras[i]:SetHidden(true)
-        row.signatureBadges[i]:SetHidden(true)
+    for i = 1, #row.signatureIcons do
+        ClearRowSignature(row, i)
     end
     row.attackIcon:SetTexture(nil)
     row.attackIcon:SetHidden(true)
@@ -513,31 +532,31 @@ local function RemoveVisibleOpponentAt(index)
     end
 end
 
-local function InsertVisibleOpponentAtTop(opponent)
+local function InsertVisibleOpponentAtTop(opponent, activate)
     if #_visibleOpponentEntries >= MAX_VISIBLE_OPPONENTS then
         RemoveVisibleOpponentAt(#_visibleOpponentEntries)
     end
 
     table.insert(_visibleOpponentEntries, 1, {
         opponent = opponent,
-        isActive = true,
+        isActive = activate,
     })
     local row = table.remove(_opponentRows, #_visibleOpponentEntries)
     table.insert(_opponentRows, 1, row)
     row.needsAnchor = true
     row.needsRender = true
-    row.needsNotice = true
+    row.needsNotice = activate
     for index = 2, #_visibleOpponentEntries do
         _opponentRows[index].needsAnchor = true
     end
 end
 
-local function AddOrUpdateVisibleOpponent(opponent)
+local function AddOrUpdateVisibleOpponent(opponent, activate)
     for index, entry in ipairs(_visibleOpponentEntries) do
         if entry.opponent == opponent then
-            entry.isActive = true
+            entry.isActive = activate
             _opponentRows[index].needsRender = true
-            _opponentRows[index].needsNotice = true
+            _opponentRows[index].needsNotice = activate
             return index
         end
     end
@@ -567,7 +586,11 @@ local function CleanupOpponentEntries()
             changed = true
         else
             local row = _opponentRows[index]
-            local isActive = now - opponent.lastSeen <= _opponentActiveDuration
+            local isActive = false
+            if opponent.lastSeen > (opponent.lastDied or 0)
+                and (now - opponent.lastSeen) <= _opponentActiveDuration then
+                isActive = true
+            end
             if opponentEntry.isActive ~= isActive then
                 opponentEntry.isActive = isActive
                 row.needsRender = true
@@ -586,8 +609,8 @@ end
 
 local OPPONENT_UPDATE_NAME = "TacticalDisplayPanel_Update"
 
-local function OnOpponentUpdated(opponent)
-    AddOrUpdateVisibleOpponent(opponent)
+local function OnOpponentUpdated(opponent, activate)
+    AddOrUpdateVisibleOpponent(opponent, activate)
     ScheduleRenderTask()
 end
 
