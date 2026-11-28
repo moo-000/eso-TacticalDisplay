@@ -1,6 +1,7 @@
 TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Panel = TacticalDisplay.Panel or {}
 local _Panel = TacticalDisplay.Panel
+local _DoOpponentTimeTick = TacticalDisplay.Data.DoOpponentTimeTick
 local _OnOpponentUpdated = TacticalDisplay.Data.OnOpponentUpdated
 local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
 local _SortedKeys = TacticalDisplay.Utilities.SortedKeys
@@ -33,10 +34,10 @@ local OPPONENT_TANK_LABEL_WIDTH = 25
 local OPPONENT_ATTACK_ICON_MARGIN = 6
 local OPPONENT_ATTACK_ICON_SIZE = 20
 
-local ROW_BGCOLOR_DEFAULT = { 0.0, 0.0, 0.0, 0.3 }
-local ROW_BGCOLOR_MAP = {
-    ["Corrosive Armor"] = { 0.2, 0.8, 0.2, 0.3 },
-    ["Onslaught"] = { 0.8, 0.4, 0.0, 0.3 },
+local ROW_HIGHLIGHT_DEFAULT = { 0.0, 0.0, 0.0, 0.5 }
+local ROW_HIGHLIGHT_MAP = {
+    ["Corrosive Armor"] = { 0.2, 0.8, 0.2, 0.5 },
+    ["Onslaught"] = { 0.8, 0.4, 0.0, 0.5 },
 }
 
 local _visibleOpponentEntries = {} -- [index] = { opponent, isActive }
@@ -62,7 +63,7 @@ local _opponentRows = {}
 -- Create UI
 -------------------------------------------------------------------------------
 
-local function SaveWindowPosition()
+local function WindowOnMoveStop()
     local left, top = _window:GetLeft(), _window:GetTop()
     if left and top then
         _config.offsetX = left
@@ -83,6 +84,12 @@ local function CreateRowAnimation(parent)
     fadeOutAnim:SetDuration(_opponentVisibleDuration * 1000 / 3 * 2)
 
     return timeline
+end
+
+local function HighlightTimelineOnStop(timeline, _)
+    local highlight = timeline.tdParent
+    highlight:SetAlpha(0.0)
+    highlight:SetCenterColor(unpack(ROW_HIGHLIGHT_DEFAULT))
 end
 
 local function SignatureIconOnMouseEnter(self)
@@ -109,7 +116,7 @@ local function CreateUI()
     _window:SetMouseEnabled(true)
     _window:SetMovable(true)
     _window:SetHidden(false)
-    _window:SetHandler("OnMoveStop", SaveWindowPosition)
+    _window:SetHandler("OnMoveStop", WindowOnMoveStop)
 
     _reserve = WINDOW_MANAGER:CreateControl(nil, _window, CT_CONTROL)
     _reserve:SetDimensions(MIN_WIDTH, MIN_HEIGHT)
@@ -128,7 +135,7 @@ local function CreateUI()
     _backdrop:SetExcludeFromResizeToFitExtents(true)
     _backdrop:SetAnchorFill(_window)
     _backdrop:SetDrawLayer(DL_BACKGROUND)
-    _backdrop:SetCenterColor(0.3, 0.0, 0.0, 0.3)
+    _backdrop:SetCenterColor(0.3, 0.3, 0.3, 0.3)
     _backdrop:SetEdgeColor(1.0, 1.0, 1.0, 0.5)
     _backdrop:SetEdgeTexture("EsoUI/Art/Tooltips/UI-Border.dds", 8, 8, 2, 0)
     _backdrop:SetMouseEnabled(false)
@@ -152,6 +159,7 @@ local function CreateUI()
         groupLeft:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
         groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, 0)
         groupLeft:SetMouseEnabled(false)
+        groupLeft.tdTimeline = CreateRowAnimation(groupLeft)
 
         local nameLabel = WINDOW_MANAGER:CreateControl(nil, groupLeft, CT_LABEL)
         nameLabel:SetDimensionConstraints(0, 0, OPPONENT_MAX_NAME_LABEL_WIDTH, 0)
@@ -169,15 +177,21 @@ local function CreateUI()
         groupRight:SetResizeToFitConstrains(ANCHOR_CONSTRAINS_X)
         groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, 0)
         groupRight:SetMouseEnabled(false)
+        groupRight.tdTimeline = CreateRowAnimation(groupRight)
 
-        local rowBg = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
-        rowBg:SetDimensions(0, OPPONENT_ROW_HEIGHT)
-        rowBg:SetExcludeFromResizeToFitExtents(true)
-        rowBg:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, 0)
-        rowBg:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, 0)
-        rowBg:SetDrawLayer(DL_BACKGROUND)
-        rowBg:SetCenterColor(unpack(ROW_BGCOLOR_DEFAULT))
-        rowBg:SetEdgeColor(0.0, 0.0, 0.0, 0.0)
+        local highlight = WINDOW_MANAGER:CreateControl(nil, _window, CT_BACKDROP)
+        highlight:SetDimensions(0, OPPONENT_ROW_HEIGHT)
+        highlight:SetExcludeFromResizeToFitExtents(true)
+        highlight:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, 0)
+        highlight:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, 0)
+        highlight:SetDrawLayer(DL_BACKGROUND)
+        highlight:SetAlpha(0.0)
+        highlight:SetCenterColor(unpack(ROW_HIGHLIGHT_DEFAULT))
+        highlight:SetEdgeColor(0.0, 0.0, 0.0, 0.0)
+        highlight.tdTimeline = ANIMATION_MANAGER:CreateTimeline()
+        highlight.tdTimeline:SetHandler("OnStop", HighlightTimelineOnStop)
+        highlight.tdTimeline.tdParent = highlight
+        highlight.tdAnimation = highlight.tdTimeline:InsertAnimation(ANIMATION_ALPHA, highlight, 0)
 
         local signatureIcons = {}
         local iconMargin = (OPPONENT_ROW_HEIGHT - OPPONENT_ATTACK_ICON_SIZE) / 2
@@ -234,14 +248,12 @@ local function CreateUI()
 
         groupLeft:SetHidden(true)
         groupRight:SetHidden(true)
-        rowBg:SetHidden(true)
+        highlight:SetHidden(true)
 
         _opponentRows[index] = {
             groupLeft = groupLeft,
             groupRight = groupRight,
-            background = rowBg,
-            timelineLeft = CreateRowAnimation(groupLeft),
-            timelineRight = CreateRowAnimation(groupRight),
+            highlight = highlight,
             nameLabel = nameLabel,
             signatureIcons = signatureIcons,
             ddLabel = ddLabel,
@@ -264,6 +276,7 @@ end
 -------------------------------------------------------------------------------
 
 local function RenderRowContents(row, opponentEntry)
+    local timeMs = GetGameTimeMilliseconds()
     local opponent = opponentEntry.opponent
     local rowFont = opponentEntry.isActive and FONT_BOLD or FONT_NORMAL
 
@@ -310,17 +323,19 @@ local function RenderRowContents(row, opponentEntry)
     end
 
     local attackIcon = nil
+    local abilityName = nil
     local attackMarkupParts = {}
 
     if opponent.lastDealtAttack then
         local attack = opponent.lastDealtAttack
         attackIcon = attack.abilityIcon
+        abilityName = attack.abilityName
 
         local abilityMarkup
         if attack.isCritical then
-            abilityMarkup = "|cFFFF00" .. attack.abilityName .. "|r"
+            abilityMarkup = "|cFFFF00" .. abilityName .. "|r"
         else
-            abilityMarkup = attack.abilityName
+            abilityMarkup = abilityName
         end
         attackMarkupParts[#attackMarkupParts + 1] = abilityMarkup
 
@@ -344,12 +359,32 @@ local function RenderRowContents(row, opponentEntry)
 
     row.groupLeft:SetHidden(false)
     row.groupRight:SetHidden(false)
-    row.background:SetHidden(false)
-    row.timelineLeft:PlayFromStart()
-    row.timelineRight:PlayFromStart()
+    row.highlight:SetHidden(false)
+    if row.needsNotice then
+        row.groupLeft.tdTimeline:PlayFromStart()
+        row.groupRight.tdTimeline:PlayFromStart()
+        row.needsNotice = false
+    end
+
+    for buffName, buff in pairs(opponent.buffs) do
+        local hlColor = ROW_HIGHLIGHT_MAP[buffName]
+        -- only support one buff for now and no overlap
+        if hlColor and not row.highlight.tdTimeline:IsPlaying() then
+            row.highlight:SetCenterColor(unpack(hlColor))
+            row.highlight.tdAnimation:SetAlphaValues(1, 0.5)
+            row.highlight.tdAnimation:SetDuration(buff.activeEndMs - buff.activeStartMs)
+            row.highlight.tdTimeline:PlayFromStart(timeMs - buff.activeStartMs)
+            break
+        end
+    end
 end
 
 local function ClearRowUI(row)
+    row.groupLeft.tdTimeline:Stop()
+    row.groupRight.tdTimeline:Stop()
+    row.highlight.tdTimeline:Stop()
+    row.needsNotice = false
+
     row.nameLabel:SetText("")
     for _, icon in ipairs(row.signatureIcons) do
         icon.abilityId = 0
@@ -361,9 +396,7 @@ local function ClearRowUI(row)
     row.attackLabel:SetText("")
     row.groupLeft:SetHidden(true)
     row.groupRight:SetHidden(true)
-    row.background:SetHidden(true)
-    row.timelineLeft:Stop()
-    row.timelineRight:Stop()
+    row.highlight:SetHidden(true)
 end
 
 local function RenderRowUI(index, row)
@@ -381,9 +414,9 @@ local function RenderRowUI(index, row)
         row.groupLeft:SetAnchor(TOPRIGHT, _contentAreaLeft, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.groupRight:ClearAnchors()
         row.groupRight:SetAnchor(TOPLEFT, _contentAreaRight, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
-        row.background:ClearAnchors()
-        row.background:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
-        row.background:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.highlight:ClearAnchors()
+        row.highlight:SetAnchor(TOPLEFT, _contentAreaLeft, TOPLEFT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
+        row.highlight:SetAnchor(TOPRIGHT, _contentAreaRight, TOPRIGHT, 0, (index - 1) * OPPONENT_ROW_HEIGHT)
         row.needsAnchor = false
     end
     if row.needsRender then
@@ -448,6 +481,7 @@ local function InsertVisibleOpponentAtTop(opponent)
     table.insert(_opponentRows, 1, row)
     row.needsAnchor = true
     row.needsRender = true
+    row.needsNotice = true
     for index = 2, #_visibleOpponentEntries do
         _opponentRows[index].needsAnchor = true
     end
@@ -458,6 +492,7 @@ local function AddOrUpdateVisibleOpponent(opponent)
         if entry.opponent == opponent then
             entry.isActive = true
             _opponentRows[index].needsRender = true
+            _opponentRows[index].needsNotice = true
             return index
         end
     end
@@ -474,6 +509,7 @@ local UPDATE_CLEANUP_INTERVAL_MS = 1000
 
 local function CleanupOpponentEntries()
     local now = GetTimeStamp()
+    local nowMs = GetGameTimeMilliseconds()
     local changed = false
     for index = #_visibleOpponentEntries, 1, -1 do
         local opponentEntry = _visibleOpponentEntries[index]
@@ -484,10 +520,15 @@ local function CleanupOpponentEntries()
             RemoveVisibleOpponentAt(index)
             changed = true
         else
+            local row = _opponentRows[index]
             local isActive = now - opponent.lastSeen <= _opponentActiveDuration
             if opponentEntry.isActive ~= isActive then
                 opponentEntry.isActive = isActive
-                _opponentRows[index].needsRender = true
+                row.needsRender = true
+                changed = true
+            end
+            if _DoOpponentTimeTick(opponent, nowMs) then
+                row.needsRender = true
                 changed = true
             end
         end

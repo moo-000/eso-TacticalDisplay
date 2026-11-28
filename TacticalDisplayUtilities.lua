@@ -12,6 +12,14 @@ function _Utilities.ClearTable(tbl)
     end
 end
 
+function _Utilities.CopyTable(orig)
+    local copy = {}
+    for k, v in pairs(orig) do
+        copy[k] = v
+    end
+    return copy
+end
+
 function _Utilities.CountTable(tbl)
     local count = 0
     for _ in pairs(tbl) do

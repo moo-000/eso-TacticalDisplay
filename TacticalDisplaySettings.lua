@@ -14,7 +14,7 @@ local _defaults = {
     enabled = true,
     debugLog = false,
     minDamage = 400,
-    signatureFilterOff = false,
+    testMode = false,
     signatureTTL = 600,
     panelEnabled = true,
     panelActiveDuration = 2,
@@ -55,7 +55,7 @@ end
 
 local function UpdateParameters()
     _Base.UpdateParameters(_config.debugLog)
-    _Data.UpdateParameters(_config.debugLog, _config.minDamage, _config.signatureFilterOff, _config.signatureTTL)
+    _Data.UpdateParameters(_config.debugLog, _config.minDamage, _config.testMode, _config.signatureTTL)
     _Panel.UpdateParameters(_config.panelActiveDuration, _config.panelVisibleDuration)
 end
 
@@ -204,13 +204,14 @@ local function CreateSettingsUI()
                 },
                 {
                     type = "checkbox",
-                    name = "Mark all incoming attacks as signature",
+                    name = "Enable Test Mode for development",
                     getFunc = function()
-                        return _config.signatureFilterOff
+                        return _config.testMode
                     end,
                     setFunc = function(enabled)
-                        _config.signatureFilterOff = enabled
+                        _config.testMode = enabled
                         UpdateParameters()
+                        ApplySettings()
                     end,
                 },
                 {

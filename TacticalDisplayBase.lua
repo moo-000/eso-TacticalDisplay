@@ -2,6 +2,7 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Base = TacticalDisplay.Base or {}
 local _Base = TacticalDisplay.Base
 local _ClearTable = TacticalDisplay.Utilities.ClearTable
+local _CopyTable = TacticalDisplay.Utilities.CopyTable
 local _CountTable = TacticalDisplay.Utilities.CountTable
 local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
@@ -73,7 +74,7 @@ local TRACKED_DOT_ABILITY_NAMES = {
 }
 local _TRACKED_DOT_ABILITIES -- [ability id] = ability name
 
--- To identify opponents' builds
+-- To identify opponents' builds and track buildup/charges
 local SIGNATURE_ABILITY_NAMES = {
     -- Class: Arcanist: Herald of the Tome
     ["The Tide King's Gaze"] = true,
@@ -86,7 +87,7 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Flame Lash"] = true,
     ["Molten Whip"] = true,
     -- Class: Dragonknight: Earthen Heart
-    ["Corrosive Armor"] = true,
+    ["Corrosive Armor"] = { ["duration"] = 10 },
     -- Class: Necromancer: Grave Lord
     ["Glacial Colossus"] = true,
     ["Pestilent Colossus"] = true,
@@ -95,10 +96,10 @@ local SIGNATURE_ABILITY_NAMES = {
     -- Class: Nightblade: Assassination
     ["Concealed Weapon"] = true,
     ["Surprise Attack"] = true,
-    ["Merciless Resolve"] = true,
-    ["Relentless Focus"] = true,
+    ["Merciless Resolve"] = { ["procRate"] = 0.2, ["maxProcs"] = 2 },
+    ["Relentless Focus"] = { ["procRate"] = 0.25, ["maxProcs"] = 2.5 },
     -- Class: Sorcerer: Daedric Summoning
-    ["Bound Armaments"] = true,
+    ["Bound Armaments"] = { ["procRate"] = 1, ["maxProcs"] = 4 },
     -- Class: Sorcerer: Dark Magic
     ["Crystal Fragments"] = true,
     -- Class: Sorcerer: Storm Calling
@@ -128,7 +129,7 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Power Slam"] = true,
     ["Reverberating Bash"] = true,
     -- Weapon: Two Handed
-    ["Onslaught"] = true,
+    ["Onslaught"] = { ["duration"] = 8 },
     ["Dizzying Swing"] = true,
     ["Wrecking Blow"] = true,
     -- World: Vampire
@@ -142,24 +143,26 @@ local SIGNATURE_ABILITY_NAMES = {
     ["Ice Comet"] = true,
     ["Shooting Star"] = true,
     -- Proc Sets: 5 pieces
-    ["Anthelmir's Construct"] = true,
+    ["Anthelmir's Construct"] = { ["procRate"] = 0.1, ["maxProcs"] = 1 },
     ["Corpseburster"] = true,
     ["Deadlands Demolisher"] = true,
     ["Eagle's Mark"] = true,
-    ["Gorethief"] = true,
-    ["Hrothgar's Chill"] = true,
+    ["Gorethief"] = { ["procRate"] = 0.2, ["maxProcs"] = 1 },
+    ["Hrothgar's Chill"] = { ["procRate"] = 1.0 / 7, ["maxProcs"] = 1 },
     ["Knight Slayer"] = true,
     ["Pyrebrand"] = true,
-    ["Scavenging Maw"] = true,
-    ["Sliver Assault"] = true,
-    ["Tarnished Nightmare"] = true,
+    ["Scavenging Maw"] = { ["procRate"] = 0.1, ["maxProcs"] = 1 },
+    ["Sliver Assault"] = { ["procRate"] = 0.2, ["maxProcs"] = 1 },
+    ["Tarnished Nightmare"] = { ["procRate"] = 0.125, ["maxProcs"] = 1 },
     ["Vicious Death"] = true,
     -- Proc Sets: Monster sets
-    ["Maarselok"] = true,
+    ["Maarselok"] = { ["procRate"] = 1.0 / 6, ["maxProcs"] = 1 }, -- DoTs last 4s, so 6s from the end to the next one.
     -- Proc Sets: Arena weapons
     ["Wrath of Elements"] = true,
 }
 local _SIGNATURE_ABILITIES -- [id] = {"main" = main ability id, "name" = ability name}
+local _SIGNATURE_BUFFS     -- [main id] = {"name", "duration"}
+local _SIGNATURE_PROCS     -- [main id] = {"name", "procRate", "maxProcs"}
 
 -- For mitigation measurement, id to player tooltip damage
 local MEASURABLE_PLAYER_ABILITY_NAMES = {
@@ -257,7 +260,9 @@ local function RebuildAbilityMaps()
     end
 
     _ClearTable(_SIGNATURE_ABILITIES)
-    for abilityName in pairs(SIGNATURE_ABILITY_NAMES) do
+    _ClearTable(_SIGNATURE_BUFFS)
+    _ClearTable(_SIGNATURE_PROCS)
+    for abilityName, buffOrProc in pairs(SIGNATURE_ABILITY_NAMES) do
         local idList = nameToIdList[abilityName] or {}
         local mainId = FindMainAbilityId(idList)
         for _, abilityId in ipairs(idList) do
@@ -266,10 +271,21 @@ local function RebuildAbilityMaps()
                 ["name"] = abilityName,
             }
         end
+        if type(buffOrProc) == "table" then
+            local entry = _CopyTable(buffOrProc)
+            entry.name = abilityName
+            if entry.duration then
+                _SIGNATURE_BUFFS[mainId] = entry
+            else
+                _SIGNATURE_PROCS[mainId] = entry
+            end
+        end
     end
     if _debugLog then
         _LogDebug(string.format("rebuilt signature ability map: %d",
             _CountTable(_SIGNATURE_ABILITIES)))
+        _LogDebug(string.format("rebuilt signature ability proc map: %d",
+            _CountTable(_SIGNATURE_PROCS)))
     end
 
     _ClearTable(_MEASURABLE_PLAYER_ABILITIES)
@@ -374,6 +390,14 @@ function _Base.Initialize(savedVars)
     db.SIGNATURE_ABILITIES = db.SIGNATURE_ABILITIES or {}
     _SIGNATURE_ABILITIES = db.SIGNATURE_ABILITIES
     _Base.SIGNATURE_ABILITIES = db.SIGNATURE_ABILITIES
+
+    db.SIGNATURE_BUFFS = db.SIGNATURE_BUFFS or {}
+    _SIGNATURE_BUFFS = db.SIGNATURE_BUFFS
+    _Base.SIGNATURE_BUFFS = db.SIGNATURE_BUFFS
+
+    db.SIGNATURE_PROCS = db.SIGNATURE_PROCS or {}
+    _SIGNATURE_PROCS = db.SIGNATURE_PROCS
+    _Base.SIGNATURE_PROCS = db.SIGNATURE_PROCS
 
     db.MEASURABLE_PLAYER_ABILITIES = db.MEASURABLE_PLAYER_ABILITIES or {}
     _MEASURABLE_PLAYER_ABILITIES = db.MEASURABLE_PLAYER_ABILITIES

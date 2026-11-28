@@ -2,6 +2,8 @@ TacticalDisplay = TacticalDisplay or {}
 TacticalDisplay.Data = TacticalDisplay.Data or {}
 local _Data = TacticalDisplay.Data
 local _GetMeasurablePlayerDamage = TacticalDisplay.Base.GetMeasurablePlayerDamage
+local _CopyTable = TacticalDisplay.Utilities.CopyTable
+local _FillDefaults = TacticalDisplay.Utilities.FillDefaults
 local _GetAbilityIconCached = TacticalDisplay.Utilities.GetAbilityIconCached
 local _LogError = TacticalDisplay.Utilities.LogError
 local _LogDebug = TacticalDisplay.Utilities.LogDebug
@@ -10,14 +12,15 @@ local _LogDebug = TacticalDisplay.Utilities.LogDebug
 local _HIDDEN_ABILITIES       -- [ability id] = ability name
 local _TRACKED_DOT_ABILITIES  -- [ability id] = ability name
 local _SIGNATURE_ABILITIES    -- [ability id] = {"main" = main ability id, "name" = ability name}
+local _SIGNATURE_BUFFS        -- [main ability id] = {"name", "duration"}
+local _SIGNATURE_PROCS        -- [main ability id] = {"name", "procRate", "maxProcs"}
 
 local _debugLog               -- boolean
 local _minDamage              -- skip tracking if lower than this
-local _signatureFilterOff     -- true to mark all attacks as signature
+local _testMode               -- include monsters and mark all their attacks as signature
 local _signatureTTL           -- how long to keep signature; unit = num of received attacks
 local _opponentTable          -- [source_or_target] = opponent data, see GetOrCreateOpponent()
 local _onOpponentUpdated = {} -- [caller_id] = func callback(opponent)
-_Data.OnOpponentUpdated = _onOpponentUpdated
 
 local SHIELD_ACTION_RESULTS = {
     ACTION_RESULT_DAMAGE_SHIELDED,
@@ -149,22 +152,37 @@ local function GetOrCreateOpponent(key)
             --     isCritical = true,
             --     isBlocked = false,
             --     isShielded = false,
+            --     isSignature = true,
+            --     sessionTimeMs = 10520,
             -- },
             lastBaseDamage = 0,
             lastMitigation = 0,
             numAttacks = 0,
-            signature = {},
+            baseDamages = {},
+            signature = {}, -- {abilityName, abilityIcon, lastUsed}
+            buffs = {},
+            procs = {},
         }
         _opponentTable[key] = opponent
     end
     return opponent
 end
 
+local function ResetOpponentSession(opponent)
+    if opponent.lastDealtAttack then
+        opponent.lastDealtAttack.sessionTimeMs = nil
+    end
+    opponent.numAttacks = opponent.numAttacks or 0
+    opponent.baseDamages = opponent.baseDamages or {}
+    opponent.signature = opponent.signature or {}
+    opponent.buffs = {}
+    opponent.procs = {}
+end
+
 local MAX_BASE_DAMAGES = 20
 
 local function UpdateOpponentBaseDamage(opponent, damage)
-    local baseDamages = opponent.baseDamages or {}
-    opponent.baseDamages = baseDamages
+    local baseDamages = opponent.baseDamages
 
     if #baseDamages >= MAX_BASE_DAMAGES then
         table.remove(baseDamages, #baseDamages)
@@ -178,17 +196,89 @@ local function UpdateOpponentBaseDamage(opponent, damage)
     opponent.lastBaseDamage = math.floor(total / #baseDamages + 0.5)
 end
 
-local function UpdateOpponentSignature(opponent)
+local function RecordOpponentBuff(opponent, buffDef)
+    local buffTimeMs = opponent.lastDealtAttack.sessionTimeMs
+
+    local ongoingBuff = opponent.buffs[buffDef.name]
+    if not ongoingBuff then
+        ongoingBuff = {}
+        opponent.buffs[buffDef.name] = ongoingBuff
+    end
+
+    -- not handling overlap - shouldn't be possible with current signature abilities
+    if ongoingBuff.activeEndMs == nil
+        or ongoingBuff.activeEndMs < buffTimeMs then
+        ongoingBuff.activeStartMs = buffTimeMs
+        ongoingBuff.activeEndMs = buffTimeMs + buffDef.duration
+        if _debugLog then
+            _LogDebug(string.format("add buff %s on %s at %d", buffDef.name, opponent.name, buffTimeMs))
+        end
+    end
+end
+
+local function GetCurrentNumProc(procDef, proc, sessionTimeMs)
+    if proc.updatedMs then
+        local delta = procDef.procRate * (sessionTimeMs - proc.updatedMs) / 1000
+        return zo_clamp(proc.numProc + delta, 0, procDef.maxProcs)
+    else
+        return procDef.maxProcs
+    end
+end
+
+local function RecordOpponentProc(opponent, procDef)
+    local procTimeMs = opponent.lastDealtAttack.sessionTimeMs
+
+    local ongoingProc = opponent.procs[procDef.name]
+    if not ongoingProc then
+        ongoingProc = { def = procDef }
+        opponent.procs[procDef.name] = ongoingProc
+    end
+
+    local previousNumProc = GetCurrentNumProc(procDef, ongoingProc, procTimeMs)
+    ongoingProc.numProc = zo_clamp(previousNumProc - 1, 0, procDef.maxProcs)
+    ongoingProc.updatedMs = procTimeMs
+    if _debugLog then
+        _LogDebug(string.format("proc %s fired from %s at %d, remain %d",
+            procDef.name, opponent.name, procTimeMs, ongoingProc.numProc))
+    end
+end
+
+local function DoOpponentTimeTick(opponent, timeMs)
+    local changed = false
+    for name, buff in pairs(opponent.buffs) do
+        if buff.activeEndMs < timeMs then
+            opponent.buffs[name] = nil
+            changed = true
+            if _debugLog then
+                _LogDebug(string.format("expire buff %s on %s at %d", name, opponent.name, timeMs))
+            end
+        end
+    end
+    for name, proc in pairs(opponent.procs) do
+        local nextNumProc = GetCurrentNumProc(proc.def, proc, timeMs)
+        if zo_floor(nextNumProc) ~= proc.numProc then
+            changed = true
+            if _debugLog then
+                _LogDebug(string.format("proc %s filling on %s at %d, next %d",
+                    name, opponent.name, timeMs, nextNumProc))
+            end
+        end
+        proc.numProc = nextNumProc
+        proc.updatedMs = timeMs
+    end
+    return changed
+end
+
+local function UpdateOpponentSignature(opponent, isMonster)
     local lastDealtAttack = opponent.lastDealtAttack
     if not lastDealtAttack then
         return
     end
 
-    local numAttacks = opponent.numAttacks or 0
-    local signature = opponent.signature or {}
-    opponent.signature = signature
+    local numAttacks = opponent.numAttacks
+    local signature = opponent.signature
 
-    if _signatureFilterOff or lastDealtAttack.isSignature then
+    if (_testMode and isMonster) or lastDealtAttack.isSignature then
         local sigDef = _SIGNATURE_ABILITIES[lastDealtAttack.abilityId]
         local sigAbilityId = sigDef and sigDef.main or lastDealtAttack.abilityId
         local sitem = signature[sigAbilityId]
@@ -200,6 +290,16 @@ local function UpdateOpponentSignature(opponent)
             signature[sigAbilityId] = sitem
         end
         sitem.lastUsed = numAttacks
+
+        local buffDef = _SIGNATURE_BUFFS[sigAbilityId]
+        if buffDef then
+            RecordOpponentBuff(opponent, buffDef)
+        end
+
+        local procDef = _SIGNATURE_PROCS[sigAbilityId]
+        if procDef then
+            RecordOpponentProc(opponent, procDef)
+        end
     end
 
     if numAttacks % 10 == 0 then
@@ -298,7 +398,7 @@ local function OnIncomingCombatEvent(
             isSignature = _SIGNATURE_ABILITIES[abilityId] ~= nil,
             sessionTimeMs = sessionTimeMs,
         }
-        opponent.numAttacks = (opponent.numAttacks or 0) + 1
+        opponent.numAttacks = opponent.numAttacks + 1
     end
 
     if not isBlocked
@@ -306,7 +406,7 @@ local function OnIncomingCombatEvent(
         UpdateOpponentBaseDamage(opponent, totalDamage)
     end
 
-    UpdateOpponentSignature(opponent)
+    UpdateOpponentSignature(opponent, sourceType == COMBAT_UNIT_TYPE_NONE)
 
     if _debugLog then
         _LogDebug(string.format("Incoming from [%s]: %d %s, %d+%d+%d %s(base %d): %d %d %d",
@@ -423,8 +523,7 @@ local function RegisterForCombatEvents()
             local inReg = INCOMING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
             EVENT_MANAGER:RegisterForEvent(inReg, EVENT_COMBAT_EVENT, onIncoming)
             if not EVENT_MANAGER:AddFilterForEvent(
-                    inReg,
-                    EVENT_COMBAT_EVENT,
+                    inReg, EVENT_COMBAT_EVENT,
                     REGISTER_FILTER_IS_ERROR, false,
                     ---@diagnostic disable-next-line: redundant-parameter
                     REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
@@ -433,6 +532,12 @@ local function RegisterForCombatEvents()
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", inReg))
             end
+            if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
+                    inReg, EVENT_COMBAT_EVENT,
+                    REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+                ) then
+                _LogError(string.format("Failed to apply player filter for %s", inReg))
+            end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = inReg
         end
 
@@ -440,8 +545,7 @@ local function RegisterForCombatEvents()
             local outReg = OUTGOING_COMBAT_EVENT_PREFIX .. tostring(actionResult)
             EVENT_MANAGER:RegisterForEvent(outReg, EVENT_COMBAT_EVENT, onOutgoing)
             if not EVENT_MANAGER:AddFilterForEvent(
-                    outReg,
-                    EVENT_COMBAT_EVENT,
+                    outReg, EVENT_COMBAT_EVENT,
                     REGISTER_FILTER_IS_ERROR, false,
                     ---@diagnostic disable-next-line: redundant-parameter
                     REGISTER_FILTER_SOURCE_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_PLAYER,
@@ -449,6 +553,12 @@ local function RegisterForCombatEvents()
                     REGISTER_FILTER_COMBAT_RESULT, actionResult
                 ) then
                 _LogError(string.format("Failed to apply filter for %s", outReg))
+            end
+            if not _testMode and not EVENT_MANAGER:AddFilterForEvent(
+                    outReg, EVENT_COMBAT_EVENT,
+                    REGISTER_FILTER_TARGET_COMBAT_UNIT_TYPE, COMBAT_UNIT_TYPE_OTHER
+                ) then
+                _LogError(string.format("Failed to apply player filter for %s", outReg))
             end
             _combatEventRegistrations[#_combatEventRegistrations + 1] = outReg
         end
@@ -497,6 +607,9 @@ end
 -- Public functions
 -------------------------------------------------------------------------------
 
+_Data.DoOpponentTimeTick = DoOpponentTimeTick
+_Data.OnOpponentUpdated = _onOpponentUpdated
+
 function _Data.Initialize(savedVars)
     local serverName = GetWorldName()
     savedVars.data = savedVars.data or {}
@@ -504,11 +617,16 @@ function _Data.Initialize(savedVars)
     savedVars.data[serverName].opponentTable = savedVars.data[serverName].opponentTable or {}
 
     _opponentTable = savedVars.data[serverName].opponentTable
+    for _, opponent in pairs(_opponentTable) do
+        ResetOpponentSession(opponent)
+    end
     _Data.OpponentTable = _opponentTable
 
     _HIDDEN_ABILITIES = TacticalDisplay.Base.HIDDEN_ABILITIES
     _TRACKED_DOT_ABILITIES = TacticalDisplay.Base.TRACKED_DOT_ABILITIES
     _SIGNATURE_ABILITIES = TacticalDisplay.Base.SIGNATURE_ABILITIES
+    _SIGNATURE_BUFFS = TacticalDisplay.Base.SIGNATURE_BUFFS
+    _SIGNATURE_PROCS = TacticalDisplay.Base.SIGNATURE_PROCS
 end
 
 local _enabled = false
@@ -531,9 +649,9 @@ function _Data.Disable()
     _enabled = false
 end
 
-function _Data.UpdateParameters(debug, minDamage, signatureFilterOff, signatureTTL)
+function _Data.UpdateParameters(debug, minDamage, testMode, signatureTTL)
     _debugLog = debug
     _minDamage = minDamage
-    _signatureFilterOff = signatureFilterOff
+    _testMode = testMode
     _signatureTTL = signatureTTL
 end
